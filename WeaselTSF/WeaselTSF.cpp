@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 
 #include <WeaselIPCData.h>
 #include <thread>
@@ -240,7 +240,7 @@ bool WeaselTSF::_EnsureServerConnected() {
     _Reconnect();
     retry++;
     if (retry >= 6) {
-      HANDLE hMutex = CreateMutex(NULL, TRUE, L"WeaselDeployerExclusiveMutex");
+      HANDLE hMutex = CreateMutex(NULL, TRUE, L"HareDeployerExclusiveMutex");
       const auto count_server_process = []() -> int {
         int count = 0;
         HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -250,7 +250,7 @@ bool WeaselTSF::_EnsureServerConnected() {
         pe.dwSize = sizeof(pe);
         if (Process32First(snap, &pe)) {
           do {
-            if (_wcsicmp(pe.szExeFile, L"WeaselServer.exe") == 0)
+            if (_wcsicmp(pe.szExeFile, L"HareServer.exe") == 0)
               count++;
           } while (Process32Next(snap, &pe));
         }

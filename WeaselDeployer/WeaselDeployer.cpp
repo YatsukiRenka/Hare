@@ -5,6 +5,7 @@
 #include <fstream>
 #include "WeaselDeployer.h"
 #include "Configurator.h"
+#include "CloudSync.h"
 
 CAppModule _Module;
 
@@ -40,7 +41,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
   CreateDirectory(WeaselUserDataPath().c_str(), NULL);
 
   int ret = 0;
-  HANDLE hMutex = CreateMutex(NULL, TRUE, L"WeaselDeployerExclusiveMutex");
+  HANDLE hMutex = CreateMutex(NULL, TRUE, L"HareDeployerExclusiveMutex");
   if (!hMutex) {
     ret = 1;
   } else if (GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -62,6 +63,15 @@ static int Run(LPTSTR lpCmdLine) {
   Configurator configurator;
   configurator.Initialize();
 
+  // Establishes the shared data key for cloud sync. A settings panel replaces
+  // this once the interface exists; until then the password travels on the
+  // command line, which is visible to other processes on the machine.
+  constexpr const wchar_t* kCloudKeyOption = L"/cloudkey:";
+  if (wcsncmp(lpCmdLine, kCloudKeyOption, wcslen(kCloudKeyOption)) == 0) {
+    const std::wstring password(lpCmdLine + wcslen(kCloudKeyOption));
+    return static_cast<int>(hare::SetUpDataKey(wtou8(password)));
+  }
+
   if (!wcscmp(L"/?", lpCmdLine) || !wcscmp(L"/help", lpCmdLine)) {
     WCHAR msg[1024] = {0};
     if (LoadString(GetModuleHandle(NULL), IDS_STR_HELP, msg,
@@ -69,7 +79,7 @@ static int Run(LPTSTR lpCmdLine) {
       MessageBox(NULL, msg, L"Weasel Deployer", MB_ICONINFORMATION | MB_OK);
     } else {
       MessageBox(NULL,
-                 L"Usage: WeaselDeployer.exe [options]\n"
+                 L"Usage: HareDeployer.exe [options]\n"
                  L"/? or /help		- Show this help message\n"
                  L"/deploy		- Update Workspace\n"
                  L"/dict		- Manage dictionary\n"

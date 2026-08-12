@@ -1,4 +1,4 @@
-﻿// WeaselSetup.cpp : main source file for WeaselSetup.exe
+// WeaselSetup.cpp : main source file for WeaselSetup.exe
 //
 
 #include "stdafx.h"
@@ -59,7 +59,7 @@ static int CustomInstall(bool installing) {
   bool silent = false;
   std::wstring user_dir;
 
-  const WCHAR KEY[] = L"Software\\Rime\\Weasel";
+  const WCHAR KEY[] = L"Software\\Rime\\Hare";
   HKEY hKey;
   LSTATUS ret = RegOpenKey(HKEY_CURRENT_USER, KEY, &hKey);
   if (ret == ERROR_SUCCESS) {
@@ -123,13 +123,13 @@ static int CustomInstall(bool installing) {
   if (_has_installed) {
     std::wstring dir(install_dir());
     std::thread th([dir]() {
-      ShellExecuteW(NULL, NULL, (dir + L"\\WeaselServer.exe").c_str(), L"/q",
+      ShellExecuteW(NULL, NULL, (dir + L"\\HareServer.exe").c_str(), L"/q",
                     NULL, SW_SHOWNORMAL);
       Sleep(500);
-      ShellExecuteW(NULL, NULL, (dir + L"\\WeaselServer.exe").c_str(), L"",
+      ShellExecuteW(NULL, NULL, (dir + L"\\HareServer.exe").c_str(), L"",
                     NULL, SW_SHOWNORMAL);
       Sleep(500);
-      ShellExecuteW(NULL, NULL, (dir + L"\\WeaselDeployer.exe").c_str(),
+      ShellExecuteW(NULL, NULL, (dir + L"\\HareDeployer.exe").c_str(),
                     L"/deploy", NULL, SW_SHOWNORMAL);
     });
     th.detach();
@@ -157,7 +157,7 @@ static int Run(LPTSTR lpCmdLine) {
     } else {
       MessageBox(
           NULL,
-          L"Usage: WeaselSetup.exe [options]\n"
+          L"Usage: HareSetup.exe [options]\n"
           L"/? or /help    - Show this help message\n"
           L"/u             - Uninstall Weasel\n"
           L"/i             - Install Weasel\n"
@@ -186,44 +186,44 @@ static int Run(LPTSTR lpCmdLine) {
   }
 
   if (auto res = GetParamByPrefix(lpCmdLine, L"/userdir:")) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
                           L"RimeUserDir", res, REG_SZ);
   }
 
   if (!wcscmp(L"/ls", lpCmdLine)) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
                           L"Language", L"chs", REG_SZ);
   } else if (!wcscmp(L"/lt", lpCmdLine)) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
                           L"Language", L"cht", REG_SZ);
   } else if (!wcscmp(L"/le", lpCmdLine)) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
                           L"Language", L"eng", REG_SZ);
   }
 
   if (!wcscmp(L"/eu", lpCmdLine)) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel\\Updates",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare\\Updates",
                           L"CheckForUpdates", L"1", REG_SZ);
   }
   if (!wcscmp(L"/du", lpCmdLine)) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel\\Updates",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare\\Updates",
                           L"CheckForUpdates", L"0", REG_SZ);
   }
 
   if (!wcscmp(L"/toggleime", lpCmdLine)) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
                           L"ToggleImeOnOpenClose", L"yes", REG_SZ);
   }
   if (!wcscmp(L"/toggleascii", lpCmdLine)) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
                           L"ToggleImeOnOpenClose", L"no", REG_SZ);
   }
   if (!wcscmp(L"/testing", lpCmdLine)) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
                           L"UpdateChannel", L"testing", REG_SZ);
   }
   if (!wcscmp(L"/release", lpCmdLine)) {
-    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\weasel",
+    return SetRegKeyValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
                           L"UpdateChannel", L"release", REG_SZ);
   }
 

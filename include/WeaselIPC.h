@@ -6,8 +6,11 @@
 #include <memory>
 #include <KeyEvent.h>
 
-#define WEASEL_IPC_WINDOW L"WeaselIPCWindow_1.0"
-#define WEASEL_IPC_PIPE_NAME L"WeaselNamedPipe"
+// These names identify the running instance system-wide. They must differ from
+// the ones official Weasel uses, or the two input methods would attach to each
+// other's server process.
+#define WEASEL_IPC_WINDOW L"HareIPCWindow_1.0"
+#define WEASEL_IPC_PIPE_NAME L"HareNamedPipe"
 
 #define WEASEL_IPC_METADATA_SIZE 1024
 #define WEASEL_IPC_BUFFER_SIZE (4 * 1024)

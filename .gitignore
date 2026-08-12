@@ -21,6 +21,7 @@ compile_commands.json
 /output/*.exe
 /output/rime.dll
 /output/weasel*.dll
+/output/hare*.dll
 /output/*.ime
 /output/*.txt
 /output/*.bat

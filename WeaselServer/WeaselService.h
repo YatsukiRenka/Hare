@@ -5,7 +5,7 @@
 
 #include "WeaselServerApp.h"
 
-#define WEASEL_SERVICE_NAME L"WeaselInputService"
+#define WEASEL_SERVICE_NAME L"HareInputService"
 
 class WeaselService {
  public:

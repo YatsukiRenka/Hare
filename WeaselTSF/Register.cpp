@@ -31,7 +31,7 @@ HKL FindIME(LANGID langid) {
         ret = RegQueryValueExW(hSubKey, L"Ime File", NULL, &type, (LPBYTE)data,
                                &size);
         if (ret == ERROR_SUCCESS && type == REG_SZ &&
-            _wcsicmp(data, L"weasel.ime") == 0)
+            _wcsicmp(data, L"hare.ime") == 0)
           hKL = (HKL)id;
       }
       RegCloseKey(hSubKey);
@@ -222,7 +222,7 @@ BOOL RegisterServer() {
         // weaselARM64.dll Rewrite the path to point to the redirector.
 
         char wrapperPath[MAX_PATH];
-        StringCbCatA(achFileName, MAX_PATH, "\\..\\weasel.dll");
+        StringCbCatA(achFileName, MAX_PATH, "\\..\\hare.dll");
         GetFullPathNameA(achFileName, MAX_PATH, wrapperPath, NULL);
         memcpy(achFileName, wrapperPath, MAX_PATH);
       }

@@ -1,10 +1,11 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "WeaselDeployer.h"
 #include "Configurator.h"
 #include "SwitcherSettingsDialog.h"
 #include "UIStyleSettings.h"
 #include "UIStyleSettingsDialog.h"
 #include "DictManagementDialog.h"
+#include "CloudSync.h"
 #include <WeaselConstants.h>
 #include <WeaselIPC.h>
 #include <WeaselIPCData.h>
@@ -42,7 +43,7 @@ void Configurator::Initialize() {
   weasel_traits.distribution_name = distribution_name.c_str();
   weasel_traits.distribution_code_name = WEASEL_CODE_NAME;
   weasel_traits.distribution_version = WEASEL_VERSION;
-  weasel_traits.app_name = "rime.weasel";
+  weasel_traits.app_name = "rime.hare";
   std::string log_dir = WeaselLogPath().u8string();
   weasel_traits.log_dir = log_dir.c_str();
   RimeApi* rime_api = rime_get_api();
@@ -114,9 +115,9 @@ int Configurator::Run(bool installing) {
 }
 
 int Configurator::UpdateWorkspace(bool report_errors) {
-  HANDLE hMutex = CreateMutex(NULL, TRUE, L"WeaselDeployerMutex");
+  HANDLE hMutex = CreateMutex(NULL, TRUE, L"HareDeployerMutex");
   if (!hMutex) {
-    LOG(ERROR) << "Error creating WeaselDeployerMutex.";
+    LOG(ERROR) << "Error creating HareDeployerMutex.";
     return 1;
   }
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -156,9 +157,9 @@ int Configurator::UpdateWorkspace(bool report_errors) {
 }
 
 int Configurator::DictManagement() {
-  HANDLE hMutex = CreateMutex(NULL, TRUE, L"WeaselDeployerMutex");
+  HANDLE hMutex = CreateMutex(NULL, TRUE, L"HareDeployerMutex");
   if (!hMutex) {
-    LOG(ERROR) << "Error creating WeaselDeployerMutex.";
+    LOG(ERROR) << "Error creating HareDeployerMutex.";
     return 1;
   }
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -196,9 +197,9 @@ int Configurator::DictManagement() {
 }
 
 int Configurator::SyncUserData() {
-  HANDLE hMutex = CreateMutex(NULL, TRUE, L"WeaselDeployerMutex");
+  HANDLE hMutex = CreateMutex(NULL, TRUE, L"HareDeployerMutex");
   if (!hMutex) {
-    LOG(ERROR) << "Error creating WeaselDeployerMutex.";
+    LOG(ERROR) << "Error creating HareDeployerMutex.";
     return 1;
   }
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -217,6 +218,11 @@ int Configurator::SyncUserData() {
     client.StartMaintenance();
   }
 
+  // Remote snapshots have to land before the merge, or the entries coming from
+  // other machines would miss this round. A failure here is logged and ignored:
+  // local synchronisation still has value on its own.
+  hare::PullBeforeSync();
+
   {
     RimeApi* rime = rime_get_api();
     if (!rime->sync_user_data()) {
@@ -226,6 +232,8 @@ int Configurator::SyncUserData() {
     }
     rime->join_maintenance_thread();
   }
+
+  hare::PushAfterSync();
 
   CloseHandle(hMutex);  // should be closed before resuming service.
 

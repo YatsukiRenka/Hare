@@ -218,7 +218,7 @@ if %build_arm64% == 1 (
   if errorlevel 1 goto error
   popd
 
-  copy arm64x_wrapper\weaselARM64X.dll output
+  copy arm64x_wrapper\hareARM64X.dll output
   if errorlevel 1 goto error
 )
 

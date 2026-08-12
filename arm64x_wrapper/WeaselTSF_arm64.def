@@ -1,5 +1,5 @@
 EXPORTS
-	DllGetClassObject = weaselARM64.dll.DllGetClassObject
-	DllCanUnloadNow = weaselARM64.dll.DllCanUnloadNow
-	DllRegisterServer = weaselARM64.dll.DllRegisterServer
-	DllUnregisterServer = weaselARM64.dll.DllUnregisterServer
+	DllGetClassObject = hareARM64.dll.DllGetClassObject
+	DllCanUnloadNow = hareARM64.dll.DllCanUnloadNow
+	DllRegisterServer = hareARM64.dll.DllRegisterServer
+	DllUnregisterServer = hareARM64.dll.DllUnregisterServer

@@ -310,6 +310,21 @@ KeySetupResult SetUpDataKey(const std::string& password) {
     return KeySetupResult::kKeyGenerationFailed;
   if (!backend->Put(kDataKeyName, to_publish))
     return KeySetupResult::kPublishFailed;
+
+  // Two devices setting up at the same moment would both find no key, generate
+  // different ones and overwrite each other, leaving one of them unable to read
+  // what the other uploads. Reading the key back and adopting whatever is
+  // actually stored makes both converge on the same one. No snapshots exist yet
+  // at this point, so the discarded key protects nothing.
+  std::vector<uint8_t> published;
+  if (backend->Get(kDataKeyName, &published) && !published.empty()) {
+    const auto winner = UnwrapDataKey(published, password);
+    if (winner) {
+      return CacheDataKey(*winner) ? KeySetupResult::kOk
+                                   : KeySetupResult::kCacheFailed;
+    }
+  }
+
   return CacheDataKey(dek) ? KeySetupResult::kOk
                            : KeySetupResult::kCacheFailed;
 }

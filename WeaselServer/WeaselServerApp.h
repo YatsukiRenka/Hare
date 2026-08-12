@@ -15,6 +15,14 @@
 
 namespace fs = std::filesystem;
 
+// Hare's own update feeds. They must never point at rime/weasel: an update
+// check that resolved there would offer the official product as an upgrade to
+// this one.
+constexpr const char* kReleaseFeedUrl =
+    "https://yatsukirenka.github.io/Hare/release/appcast.xml";
+constexpr const char* kTestingFeedUrl =
+    "https://yatsukirenka.github.io/Hare/testing/appcast.xml";
+
 class WeaselServerApp {
  public:
   static bool execute(const fs::path& cmd, const std::wstring& args) {
@@ -34,17 +42,19 @@ class WeaselServerApp {
   }
 
   static bool check_update() {
-    // when checked manually, show testing versions too
-    std::string feed_url = GetCustomResource("ManualUpdateFeedURL", "APPCAST");
+    // The APPCAST resources inherited from upstream still describe the official
+    // Weasel releases, so they are bypassed entirely: consulting them would let
+    // Hare offer, and install, a different product over itself. Until Hare
+    // publishes a signed feed of its own these addresses simply fail to
+    // resolve, which leaves the check harmlessly unsuccessful.
+    std::string feed_url = kReleaseFeedUrl;
     std::wstring channel{};
     auto ret = RegGetStringValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
                                  L"UpdateChannel", channel);
     if (!ret && channel == L"testing") {
-      feed_url = GetCustomResource("TestingManualUpdateFeedURL", "APPCAST");
+      feed_url = kTestingFeedUrl;
     }
-    if (!feed_url.empty()) {
-      win_sparkle_set_appcast_url(feed_url.c_str());
-    }
+    win_sparkle_set_appcast_url(feed_url.c_str());
     win_sparkle_check_update_with_ui();
     return true;
   }

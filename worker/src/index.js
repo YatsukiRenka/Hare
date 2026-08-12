@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Yatsuki Renka
+
 // Storage proxy for Hare's cloud sync.
 //
 // Its reason to exist is setup cost: reaching R2 directly asks the user for an

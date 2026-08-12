@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Yatsuki Renka
+
 #include "stdafx.h"
 #include "CloudSync.h"
 
@@ -150,13 +153,14 @@ class LocalDirBackend : public SyncBackend {
     return true;
   }
 
-  bool Get(const std::string& name, std::vector<uint8_t>* out) override {
+  FetchResult Get(const std::string& name,
+                  std::vector<uint8_t>* out) override {
     const fs::path path = root_ / u8tow(name);
     std::error_code ec;
     if (!fs::exists(path, ec))
-      return false;
+      return ec ? FetchResult::kError : FetchResult::kNotFound;
     *out = ReadFileBytes(path);
-    return true;
+    return FetchResult::kOk;
   }
 
   bool Put(const std::string& name,
@@ -292,7 +296,15 @@ KeySetupResult SetUpDataKey(const std::string& password) {
     return KeySetupResult::kNoBackend;
 
   std::vector<uint8_t> wrapped;
-  if (backend->Get(kDataKeyName, &wrapped) && !wrapped.empty()) {
+  const FetchResult fetched = backend->Get(kDataKeyName, &wrapped);
+
+  // Only a definite absence justifies creating a key. If the storage merely
+  // could not be reached, publishing a fresh one would overwrite the key that
+  // existing snapshots were encrypted with and lose them for good.
+  if (fetched == FetchResult::kError)
+    return KeySetupResult::kStorageUnreachable;
+
+  if (fetched == FetchResult::kOk && !wrapped.empty()) {
     // Another device published a key already; this one has to join it, and a
     // wrong password simply fails to unwrap.
     const auto dek = UnwrapDataKey(wrapped, password);
@@ -317,7 +329,8 @@ KeySetupResult SetUpDataKey(const std::string& password) {
   // actually stored makes both converge on the same one. No snapshots exist yet
   // at this point, so the discarded key protects nothing.
   std::vector<uint8_t> published;
-  if (backend->Get(kDataKeyName, &published) && !published.empty()) {
+  if (backend->Get(kDataKeyName, &published) == FetchResult::kOk &&
+      !published.empty()) {
     const auto winner = UnwrapDataKey(published, password);
     if (winner) {
       return CacheDataKey(*winner) ? KeySetupResult::kOk
@@ -359,7 +372,7 @@ bool PullBeforeSync() {
       continue;
 
     std::vector<uint8_t> sealed;
-    if (!backend->Get(name, &sealed))
+    if (backend->Get(name, &sealed) != FetchResult::kOk)
       return false;
     const auto plaintext = AesGcmDecrypt(dek, sealed);
     if (!plaintext)

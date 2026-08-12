@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Yatsuki Renka
+
 #pragma once
 
 #include <map>
@@ -27,7 +30,7 @@ class WebDavBackend : public SyncBackend {
   explicit WebDavBackend(WebDavSettings settings);
 
   bool List(std::vector<std::string>* names) override;
-  bool Get(const std::string& name, std::vector<uint8_t>* out) override;
+  FetchResult Get(const std::string& name, std::vector<uint8_t>* out) override;
   bool Put(const std::string& name, const std::vector<uint8_t>& data) override;
   std::wstring Describe() const override;
 

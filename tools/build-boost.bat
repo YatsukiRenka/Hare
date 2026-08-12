@@ -1,4 +1,6 @@
 @echo off
+rem SPDX-License-Identifier: AGPL-3.0-or-later
+rem Copyright (C) 2026 Yatsuki Renka
 rem Build the Boost static libraries that Hare links against.
 rem
 rem Only serialization and thread are needed. librime arrives prebuilt through

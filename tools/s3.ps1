@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Yatsuki Renka
+
 # Minimal S3 client for inspecting a sync bucket during development.
 # Credentials come from parameters or the environment; nothing is stored here.
 #

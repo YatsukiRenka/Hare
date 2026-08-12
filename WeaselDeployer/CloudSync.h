@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Yatsuki Renka
+
 #pragma once
 
 #include <cstdint>
@@ -21,6 +24,12 @@
 
 namespace hare {
 
+// "Absent" has to be distinguishable from "could not tell". Treating a network
+// error as proof that the data key is missing would lead to publishing a new
+// one over the old, and every snapshot encrypted with the old key would become
+// unreadable.
+enum class FetchResult { kOk, kNotFound, kError };
+
 // Remote storage, reduced to named blobs. Directory walking and encryption
 // live in one place above this interface so every backend behaves the same and
 // no backend can accidentally upload plaintext.
@@ -30,7 +39,8 @@ class SyncBackend {
 
   // Names are relative and use forward slashes: "<installation_id>/<file>".
   virtual bool List(std::vector<std::string>* names) = 0;
-  virtual bool Get(const std::string& name, std::vector<uint8_t>* out) = 0;
+  virtual FetchResult Get(const std::string& name,
+                          std::vector<uint8_t>* out) = 0;
   virtual bool Put(const std::string& name,
                    const std::vector<uint8_t>& data) = 0;
 
@@ -103,6 +113,7 @@ enum class KeySetupResult {
   kKeyGenerationFailed = 4,
   kPublishFailed = 5,
   kCacheFailed = 6,
+  kStorageUnreachable = 7,
 };
 
 KeySetupResult SetUpDataKey(const std::string& password);

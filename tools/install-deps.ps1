@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Yatsuki Renka
+
 # Fetches the third-party pieces the build needs and seeds the shared data
 # directory. Safe to re-run; anything already present is skipped.
 #

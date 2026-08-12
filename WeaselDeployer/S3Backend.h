@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Yatsuki Renka
+
 #pragma once
 
 #include <map>
@@ -30,7 +33,7 @@ class S3Backend : public SyncBackend {
   explicit S3Backend(S3Settings settings);
 
   bool List(std::vector<std::string>* names) override;
-  bool Get(const std::string& name, std::vector<uint8_t>* out) override;
+  FetchResult Get(const std::string& name, std::vector<uint8_t>* out) override;
   bool Put(const std::string& name, const std::vector<uint8_t>& data) override;
   std::wstring Describe() const override;
 

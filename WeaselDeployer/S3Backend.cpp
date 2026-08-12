@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Yatsuki Renka
+
 #include "stdafx.h"
 #include "S3Backend.h"
 
@@ -62,6 +65,12 @@ std::string FirstOrEmpty(const std::vector<std::string>& values) {
 }  // namespace
 
 S3Backend::S3Backend(S3Settings settings) : settings_(std::move(settings)) {
+  // A configured endpoint ending in a slash would produce "//bucket/..." in the
+  // request while the signature covers "/bucket/...", and services that
+  // compare the two reject it.
+  while (!settings_.endpoint.empty() && settings_.endpoint.back() == '/')
+    settings_.endpoint.pop_back();
+
   // The prefix keeps snapshots in their own corner of a bucket that may hold
   // unrelated objects.
   if (!settings_.prefix.empty() && settings_.prefix.back() != '/')
@@ -165,15 +174,18 @@ bool S3Backend::List(std::vector<std::string>* names) {
   }
 }
 
-bool S3Backend::Get(const std::string& name, std::vector<uint8_t>* out) {
+FetchResult S3Backend::Get(const std::string& name,
+                           std::vector<uint8_t>* out) {
   const std::string key = settings_.prefix + name;
   const auto headers = SignedHeaders("GET", CanonicalUri(key), "", "");
   const HttpResponse response =
       HttpRequest(L"GET", u8tow(ObjectUrl(key)), headers, "");
+  if (response.status == 404)
+    return FetchResult::kNotFound;
   if (!response.ok())
-    return false;
+    return FetchResult::kError;
   out->assign(response.body.begin(), response.body.end());
-  return true;
+  return FetchResult::kOk;
 }
 
 bool S3Backend::Put(const std::string& name,

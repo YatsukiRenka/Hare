@@ -16,7 +16,9 @@ int WeaselServerApp::Run() {
   if (!m_server.Start())
     return -1;
 
-  // win_sparkle_set_appcast_url("http://localhost:8000/weasel/update/appcast.xml");
+  // Set explicitly rather than letting WinSparkle read the APPCAST resources,
+  // which upstream populated with the official Weasel feeds.
+  win_sparkle_set_appcast_url(kReleaseFeedUrl);
   win_sparkle_set_registry_path("Software\\Rime\\Hare\\Updates");
   if (GetThreadUILanguage() ==
       MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL))

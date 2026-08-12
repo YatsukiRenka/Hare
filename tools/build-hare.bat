@@ -1,4 +1,6 @@
 @echo off
+rem SPDX-License-Identifier: AGPL-3.0-or-later
+rem Copyright (C) 2026 Yatsuki Renka
 rem Wrapper around the upstream build.bat.
 rem
 rem Arguments are forwarded to build.bat (weasel, installer, rebuild, debug, ...).

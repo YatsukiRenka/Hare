@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Yatsuki Renka
+
 #include "stdafx.h"
 #include "WebDavBackend.h"
 
@@ -164,13 +167,16 @@ bool WebDavBackend::List(std::vector<std::string>* names) {
   return true;
 }
 
-bool WebDavBackend::Get(const std::string& name, std::vector<uint8_t>* out) {
+FetchResult WebDavBackend::Get(const std::string& name,
+                               std::vector<uint8_t>* out) {
   const HttpResponse response =
       HttpRequest(L"GET", ResourceUrl(name), AuthHeaders(), "");
+  if (response.status == 404)
+    return FetchResult::kNotFound;
   if (!response.ok())
-    return false;
+    return FetchResult::kError;
   out->assign(response.body.begin(), response.body.end());
-  return true;
+  return FetchResult::kOk;
 }
 
 bool WebDavBackend::Put(const std::string& name,

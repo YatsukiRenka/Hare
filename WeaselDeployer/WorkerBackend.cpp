@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Yatsuki Renka
+
 #include "stdafx.h"
 #include "WorkerBackend.h"
 
@@ -52,14 +55,17 @@ bool WorkerBackend::List(std::vector<std::string>* names) {
   return true;
 }
 
-bool WorkerBackend::Get(const std::string& name, std::vector<uint8_t>* out) {
+FetchResult WorkerBackend::Get(const std::string& name,
+                               std::vector<uint8_t>* out) {
   const std::wstring url =
       u8tow(settings_.url + "/o/" + UriEncode(name, false));
   const HttpResponse response = HttpRequest(L"GET", url, AuthHeaders(), "");
+  if (response.status == 404)
+    return FetchResult::kNotFound;
   if (!response.ok())
-    return false;
+    return FetchResult::kError;
   out->assign(response.body.begin(), response.body.end());
-  return true;
+  return FetchResult::kOk;
 }
 
 bool WorkerBackend::Put(const std::string& name,

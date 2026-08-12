@@ -82,7 +82,13 @@ cmd  /c tools\build-hare.bat    # 构建，产物在 output\
 
 ## 许可
 
-本项目继承小狼毫的 **GPLv3**。分发二进制时必须一并提供对应源码。
+紫毫新增的代码按 **AGPL-3.0-or-later** 授权，见 [LICENSE.AGPL.txt](LICENSE.AGPL.txt)。
+
+由小狼毫衍生的部分仍受 **GPL-3.0** 约束，见 [LICENSE.txt](LICENSE.txt)。上游代码的许可不因分支而改变，紫毫也无权替它重新授权；GPL-3.0 第 13 条允许将 GPL-3.0 作品与 AGPL-3.0 作品组合分发，本项目正是这样的组合作品。
+
+实际影响：分发二进制必须一并提供完整源码；**若把紫毫的同步服务端部署成网络服务供他人使用，服务端源码同样必须公开**——这正是选择 AGPL 而非 GPL 的原因。[`worker/`](worker/) 下的 Worker 属于此列。
+
+第三方组件：
 
 - [librime](https://github.com/rime/librime) — BSD-3-Clause
 - [plum](https://github.com/rime/plum) — LGPL-3.0

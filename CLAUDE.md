@@ -34,4 +34,8 @@ cmd /c tools\build-hare.bat
 
 ## 许可
 
-本项目是 weasel 的衍生作品，受 **GPLv3** 约束，分发二进制必须提供对应源码。librime 是 BSD-3-Clause。GPLv3 不含网络条款，服务端组件不受传染。
+紫毫新增的代码按 **AGPL-3.0-or-later** 授权；由 weasel 衍生的部分仍是 **GPL-3.0**，上游代码的许可不因分支而改变。GPL-3.0 第 13 条允许两者组合分发，本项目即为这样的组合作品。
+
+新写的文件请标注 AGPL-3.0-or-later。修改上游文件时不要改动其原有许可声明。
+
+AGPL 的网络条款意味着：把同步服务端部署成网络服务供他人使用，服务端源码必须公开。`worker/` 属于此列。librime 是 BSD-3-Clause，`third_party/argon2/` 是 CC0 / Apache-2.0。

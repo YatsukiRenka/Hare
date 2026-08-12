@@ -33,22 +33,30 @@ Timestamp UtcNow() {
   return {date, datetime};
 }
 
-// Pulls the <Key> elements out of a ListObjectsV2 response. The document has a
-// fixed, flat shape, so scanning for the tag beats linking an XML parser.
-std::vector<std::string> ParseKeys(const std::string& xml) {
-  std::vector<std::string> keys;
+// Pulls a single element's text out of a ListObjectsV2 response. The document
+// has a fixed, flat shape, so scanning for the tag beats linking an XML parser.
+std::vector<std::string> ExtractTag(const std::string& xml,
+                                    const std::string& tag) {
+  const std::string open_tag = "<" + tag + ">";
+  const std::string close_tag = "</" + tag + ">";
+  std::vector<std::string> values;
   size_t pos = 0;
   for (;;) {
-    const size_t open = xml.find("<Key>", pos);
+    const size_t open = xml.find(open_tag, pos);
     if (open == std::string::npos)
       break;
-    const size_t close = xml.find("</Key>", open);
+    const size_t close = xml.find(close_tag, open);
     if (close == std::string::npos)
       break;
-    keys.push_back(xml.substr(open + 5, close - open - 5));
-    pos = close + 6;
+    values.push_back(
+        xml.substr(open + open_tag.size(), close - open - open_tag.size()));
+    pos = close + close_tag.size();
   }
-  return keys;
+  return values;
+}
+
+std::string FirstOrEmpty(const std::vector<std::string>& values) {
+  return values.empty() ? std::string() : values.front();
 }
 
 }  // namespace
@@ -120,23 +128,41 @@ std::string S3Backend::CanonicalUri(const std::string& key) const {
 }
 
 bool S3Backend::List(std::vector<std::string>* names) {
-  const std::string query =
-      "list-type=2&prefix=" + UriEncode(settings_.prefix, true);
-  const auto headers =
-      SignedHeaders("GET", "/" + settings_.bucket, query, "");
-  const std::wstring url =
-      u8tow(settings_.endpoint + "/" + settings_.bucket + "?" + query);
+  // A listing is capped at 1000 keys, so the continuation token has to be
+  // followed; stopping after the first page would silently drop snapshots
+  // once enough devices or dictionaries accumulate.
+  std::string continuation_token;
+  for (;;) {
+    std::string query =
+        "list-type=2&prefix=" + UriEncode(settings_.prefix, true);
+    if (!continuation_token.empty()) {
+      // Query parameters must be signed in sorted order, and
+      // continuation-token sorts before list-type and prefix.
+      query = "continuation-token=" + UriEncode(continuation_token, true) +
+              "&" + query;
+    }
 
-  const HttpResponse response = HttpRequest(L"GET", url, headers, "");
-  if (!response.ok())
-    return false;
+    const auto headers = SignedHeaders("GET", "/" + settings_.bucket, query, "");
+    const std::wstring url =
+        u8tow(settings_.endpoint + "/" + settings_.bucket + "?" + query);
 
-  for (const std::string& key : ParseKeys(response.body)) {
-    if (key.size() <= settings_.prefix.size())
-      continue;
-    names->push_back(key.substr(settings_.prefix.size()));
+    const HttpResponse response = HttpRequest(L"GET", url, headers, "");
+    if (!response.ok())
+      return false;
+
+    for (const std::string& key : ExtractTag(response.body, "Key")) {
+      if (key.size() <= settings_.prefix.size())
+        continue;
+      names->push_back(key.substr(settings_.prefix.size()));
+    }
+
+    if (FirstOrEmpty(ExtractTag(response.body, "IsTruncated")) != "true")
+      return true;
+    continuation_token =
+        FirstOrEmpty(ExtractTag(response.body, "NextContinuationToken"));
+    if (continuation_token.empty())
+      return true;  // truncated but no token; nothing more can be fetched
   }
-  return true;
 }
 
 bool S3Backend::Get(const std::string& name, std::vector<uint8_t>* out) {

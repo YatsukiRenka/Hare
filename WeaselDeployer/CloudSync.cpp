@@ -105,17 +105,29 @@ bool WriteFileBytes(const fs::path& path, const std::string& data) {
   return out.good();
 }
 
+// Remote names become local paths, so each component has to be a plain file
+// name. Without this a remote object called "../../evil.userdb.txt" would be
+// written outside the sync directory, and the snapshot filter alone would not
+// catch it because it only inspects the base name.
+bool IsPlainComponent(const std::string& component) {
+  if (component.empty() || component == "." || component == "..")
+    return false;
+  if (component.find_first_of("/\\:") != std::string::npos)
+    return false;
+  return true;
+}
+
 // Files land in a directory named after the machine that produced them, so a
 // blob name always has exactly one slash.
 bool SplitName(const std::string& name,
                std::string* installation,
                std::string* file) {
   const size_t slash = name.find('/');
-  if (slash == std::string::npos || slash == 0 || slash + 1 >= name.size())
+  if (slash == std::string::npos)
     return false;
   *installation = name.substr(0, slash);
   *file = name.substr(slash + 1);
-  return true;
+  return IsPlainComponent(*installation) && IsPlainComponent(*file);
 }
 
 class LocalDirBackend : public SyncBackend {

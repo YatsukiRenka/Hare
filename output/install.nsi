@@ -163,8 +163,12 @@ uninst:
 call_uninstaller:
   ExecWait '"$R1\HareServer.exe" /quit'
   ExecWait '"$R1\HareSetup.exe" /u'
-  ; Remove registry keys
-  DeleteRegKey HKLM SOFTWARE\Rime
+  ; Remove only this product's branch. NSIS deletes recursively, so removing
+  ; the shared SOFTWARE\Rime parent would take the official Weasel keys with
+  ; it; /ifempty leaves the parent alone while any other Rime distribution
+  ; still lives there.
+  DeleteRegKey HKLM SOFTWARE\Rime\Hare
+  DeleteRegKey /ifempty HKLM SOFTWARE\Rime
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hare"
   ; don't redirect on 64 bit system for auto run setting
   ${If} ${IsNativeARM64}
@@ -383,8 +387,12 @@ Section "Uninstall"
 
   ExecWait '"$INSTDIR\HareSetup.exe" /u'
 
-  ; Remove registry keys
-  DeleteRegKey HKLM SOFTWARE\Rime
+  ; Remove only this product's branch. NSIS deletes recursively, so removing
+  ; the shared SOFTWARE\Rime parent would take the official Weasel keys with
+  ; it; /ifempty leaves the parent alone while any other Rime distribution
+  ; still lives there.
+  DeleteRegKey HKLM SOFTWARE\Rime\Hare
+  DeleteRegKey /ifempty HKLM SOFTWARE\Rime
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hare"
   ; don't redirect on 64 bit system for auto run setting
   ${If} ${IsNativeARM64}

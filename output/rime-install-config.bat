@@ -11,7 +11,7 @@ set plum_dir=%APPDATA%\plum
 rem Location of Rime user directory
 rem set rime_dir=%APPDATA%\Rime
 
-set key=HKEY_CURRENT_USER\SOFTWARE\Rime\Weasel
+set key=HKEY_CURRENT_USER\SOFTWARE\Rime\Hare
 set name=RimeUserDir
 for /f "tokens=2*" %%a in ('reg query "%key%" /v "%name%"') do set rime_dir=%%b
 

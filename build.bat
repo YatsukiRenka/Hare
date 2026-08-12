@@ -128,8 +128,8 @@ if %build_rime% == 0 (
 
 rem quit WeaselServer.exe before building
 cd /d %WEASEL_ROOT%
-if exist output\weaselserver.exe (
-  output\weaselserver.exe /q
+if exist output\HareServer.exe (
+  output\HareServer.exe /q
 )
 
 rem build booost

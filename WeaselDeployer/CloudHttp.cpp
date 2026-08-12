@@ -161,8 +161,14 @@ HttpResponse HttpRequest(const std::wstring& method,
   if (!connection)
     return response;
 
-  const DWORD request_flags =
-      parts.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0;
+  // Credentials must never travel in the clear. Backends authenticate with a
+  // Basic password or a bearer token, so a plain http:// endpoint would hand
+  // them to anyone on the path; refuse rather than downgrade silently.
+  const bool secure = parts.nScheme == INTERNET_SCHEME_HTTPS;
+  if (!secure && headers.count(L"Authorization") != 0)
+    return response;
+
+  const DWORD request_flags = secure ? WINHTTP_FLAG_SECURE : 0;
   WinHttpHandle request(WinHttpOpenRequest(connection.get(), method.c_str(),
                                            path, nullptr, WINHTTP_NO_REFERER,
                                            WINHTTP_DEFAULT_ACCEPT_TYPES,

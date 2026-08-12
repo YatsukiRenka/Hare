@@ -145,12 +145,22 @@ HttpResponse HttpRequest(const std::wstring& method,
   parts.dwStructSize = sizeof(parts);
   wchar_t host[256] = {0};
   wchar_t path[2048] = {0};
+  wchar_t query[2048] = {0};
   parts.lpszHostName = host;
   parts.dwHostNameLength = _countof(host);
   parts.lpszUrlPath = path;
   parts.dwUrlPathLength = _countof(path);
+  parts.lpszExtraInfo = query;
+  parts.dwExtraInfoLength = _countof(query);
   if (!WinHttpCrackUrl(url.c_str(), 0, 0, &parts))
     return response;
+
+  // The query is requested separately and re-joined rather than relying on
+  // where WinHttpCrackUrl leaves it when no buffer is supplied. SigV4 signs the
+  // query, so a target that silently lost it would be rejected as a signature
+  // mismatch, and that is not a failure worth making dependent on undocumented
+  // behaviour.
+  const std::wstring target = std::wstring(path) + query;
 
   WinHttpHandle session(WinHttpOpen(L"Hare/1.0",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
@@ -172,10 +182,9 @@ HttpResponse HttpRequest(const std::wstring& method,
     return response;
 
   const DWORD request_flags = secure ? WINHTTP_FLAG_SECURE : 0;
-  WinHttpHandle request(WinHttpOpenRequest(connection.get(), method.c_str(),
-                                           path, nullptr, WINHTTP_NO_REFERER,
-                                           WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                           request_flags));
+  WinHttpHandle request(WinHttpOpenRequest(
+      connection.get(), method.c_str(), target.c_str(), nullptr,
+      WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, request_flags));
   if (!request)
     return response;
 

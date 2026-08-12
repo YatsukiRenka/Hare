@@ -58,13 +58,27 @@ std::string ReadRegSecret(const wchar_t* key, const wchar_t* value) {
   return Unprotect(ReadRegBinary(key, value));
 }
 
+// The result is signed as the canonical host, so it has to match the Host
+// header WinHTTP puts on the wire. A non-default port belongs there; a port
+// that merely restates the scheme's default does not, because WinHTTP omits it.
 std::string HostFromEndpoint(const std::string& endpoint) {
-  const size_t scheme = endpoint.find("://");
-  const size_t begin = scheme == std::string::npos ? 0 : scheme + 3;
+  const size_t scheme_end = endpoint.find("://");
+  const std::string scheme =
+      scheme_end == std::string::npos ? "" : endpoint.substr(0, scheme_end);
+  const size_t begin = scheme_end == std::string::npos ? 0 : scheme_end + 3;
   const size_t slash = endpoint.find('/', begin);
-  return endpoint.substr(begin, slash == std::string::npos
-                                    ? std::string::npos
-                                    : slash - begin);
+  std::string host = endpoint.substr(
+      begin, slash == std::string::npos ? std::string::npos : slash - begin);
+
+  const size_t colon = host.rfind(':');
+  if (colon != std::string::npos) {
+    const std::string port = host.substr(colon + 1);
+    if ((scheme == "https" && port == "443") ||
+        (scheme == "http" && port == "80")) {
+      host.resize(colon);
+    }
+  }
+  return host;
 }
 
 // installation.yaml is written by Rime and is a flat mapping, so a line scan
@@ -90,12 +104,20 @@ std::wstring ReadInstallationSetting(const std::string& key) {
   return {};
 }
 
-std::vector<uint8_t> ReadFileBytes(const fs::path& path) {
+// An unreadable file and an empty one must not look alike. Returning an empty
+// buffer for both would let a read failure pass for "no data key stored yet",
+// and the replacement key would render every existing snapshot unreadable.
+bool ReadFileBytes(const fs::path& path, std::vector<uint8_t>* out) {
   std::ifstream in(path, std::ios::binary);
+  if (!in)
+    return false;
   std::ostringstream buffer;
   buffer << in.rdbuf();
+  if (in.bad())
+    return false;
   const std::string data = buffer.str();
-  return std::vector<uint8_t>(data.begin(), data.end());
+  out->assign(data.begin(), data.end());
+  return true;
 }
 
 bool WriteFileBytes(const fs::path& path, const std::string& data) {
@@ -159,8 +181,7 @@ class LocalDirBackend : public SyncBackend {
     std::error_code ec;
     if (!fs::exists(path, ec))
       return ec ? FetchResult::kError : FetchResult::kNotFound;
-    *out = ReadFileBytes(path);
-    return FetchResult::kOk;
+    return ReadFileBytes(path, out) ? FetchResult::kOk : FetchResult::kError;
   }
 
   bool Put(const std::string& name,
@@ -304,7 +325,13 @@ KeySetupResult SetUpDataKey(const std::string& password) {
   if (fetched == FetchResult::kError)
     return KeySetupResult::kStorageUnreachable;
 
-  if (fetched == FetchResult::kOk && !wrapped.empty()) {
+  // A stored key that reads back empty is a damaged object, not a missing one.
+  // Replacing it would discard whatever the existing snapshots were encrypted
+  // with, so this stops instead.
+  if (fetched == FetchResult::kOk && wrapped.empty())
+    return KeySetupResult::kStorageUnreachable;
+
+  if (fetched == FetchResult::kOk) {
     // Another device published a key already; this one has to join it, and a
     // wrong password simply fails to unwrap.
     const auto dek = UnwrapDataKey(wrapped, password);
@@ -410,7 +437,9 @@ bool PushAfterSync() {
   for (const auto& file : fs::directory_iterator(dir, ec)) {
     if (!file.is_regular_file() || !IsSyncableSnapshot(file.path()))
       continue;
-    const std::vector<uint8_t> raw = ReadFileBytes(file.path());
+    std::vector<uint8_t> raw;
+    if (!ReadFileBytes(file.path(), &raw))
+      return false;  // never overwrite a good remote snapshot with nothing
     const std::vector<uint8_t> sealed =
         AesGcmEncrypt(dek, std::string(raw.begin(), raw.end()));
     if (sealed.empty())

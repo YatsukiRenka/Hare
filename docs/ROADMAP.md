@@ -90,6 +90,10 @@ c_guidDisplayAttributeInput {E17A8C85-D946-468B-8606-07F7C0BD179A}
 
 依赖上保持克制：HTTP 用 WinHTTP、加解密用 CNG，都是系统自带；不引入 OpenSSL 或 libcurl，每多一个第三方库就多一层上游合并的负担。
 
+阶段四已完成，含三轮独立审查发现的全部有效问题。判定为不成立的结论与其证据记在 [REVIEW-NOTES.md](REVIEW-NOTES.md)，动这块代码前先读。
+
+留下的短板有两处，都由下一阶段解决：主密码经 `HareDeployer.exe /cloudkey:<密码>` 传入，命令行对同机其他进程可见；四种后端的配置只能改注册表，`tools\configure-sync.ps1` 只是把这件事变成一条命令，不是界面。
+
 ## 阶段五：WebView2 设置面板
 
 两个面板：同步配置与皮肤选择。需要 `Microsoft.Web.WebView2` SDK 与 WRL。

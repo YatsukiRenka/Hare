@@ -71,9 +71,11 @@ cmd  /c tools\build-hare.bat    # 构建，产物在 output\
 
 ## 文档
 
+- [docs/CONTINUE.md](docs/CONTINUE.md) — 新机器上从克隆到跑起来的完整流程
 - [docs/DESIGN.md](docs/DESIGN.md) — 设计决策与背后的取舍
 - [docs/BUILD.md](docs/BUILD.md) — 工具链与环境陷阱
 - [docs/ROADMAP.md](docs/ROADMAP.md) — 阶段划分与当前进度
+- [docs/REVIEW-NOTES.md](docs/REVIEW-NOTES.md) — 审查结论，含判定不成立的条目与证据
 - [CLAUDE.md](CLAUDE.md) — 给 AI 助手的项目约定
 
 ## 上游

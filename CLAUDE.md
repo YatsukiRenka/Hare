@@ -2,11 +2,13 @@
 
 [rime/weasel](https://github.com/rime/weasel) 的分支，在小狼毫基础上加**图片皮肤**与**云同步**。Windows 桌面端，自用为主、顺手开源。
 
-先读 `docs/`：
+被要求「继续开发」时，按此顺序读，然后接着 `docs/ROADMAP.md` 里下一个未完成的阶段做：
 
-- `docs/DESIGN.md` — 需求与设计决策，以及每个决策背后的取舍
-- `docs/BUILD.md` — 工具链与三个必须知道的环境陷阱
-- `docs/ROADMAP.md` — 阶段划分、当前进度、各改动的落点
+1. `docs/CONTINUE.md` — 换机后的完整启动流程：前提、构建、安装、配置同步、验证手法
+2. `docs/ROADMAP.md` — 阶段划分、当前进度、各改动的落点
+3. `docs/DESIGN.md` — 需求与设计决策，以及每个决策背后的取舍
+4. `docs/REVIEW-NOTES.md` — **动云同步代码前必读**，记着哪些「缺陷」经实测判定为不成立，以及反复出现的缺陷模式
+5. `docs/BUILD.md` — 工具链与环境陷阱
 
 ## 铁律
 

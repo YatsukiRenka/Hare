@@ -82,7 +82,7 @@ cmd  /c tools\build-hare.bat    # 构建，产物在 output\
 
 ## 许可
 
-紫毫新增的代码按 **AGPL-3.0-or-later** 授权，见 [LICENSE.AGPL.txt](LICENSE.AGPL.txt)。
+紫毫新增的代码按 **AGPL-3.0-or-later** 授权，见 [LICENSE](LICENSE)。
 
 由小狼毫衍生的部分仍受 **GPL-3.0** 约束，见 [LICENSE.txt](LICENSE.txt)。上游代码的许可不因分支而改变，紫毫也无权替它重新授权；GPL-3.0 第 13 条允许将 GPL-3.0 作品与 AGPL-3.0 作品组合分发，本项目正是这样的组合作品。
 

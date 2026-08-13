@@ -96,13 +96,36 @@ c_guidDisplayAttributeInput {E17A8C85-D946-468B-8606-07F7C0BD179A}
 
 ## 阶段五：WebView2 设置面板
 
-两个面板：同步配置与皮肤选择。需要 `Microsoft.Web.WebView2` SDK 与 WRL。
+同步配置面板已完成。皮肤面板随阶段六一起做——皮肤功能尚不存在，先做面板等于对着空气设计。
 
-## 阶段六：图片皮肤
+入口：托盘菜单「云同步设置」，或 `HareDeployer.exe /settings`。面板本体在 `WeaselDeployer/SettingsPanel.h/.cpp` 与 `WeaselDeployer/settings.html`，配置的写入侧在 `CloudSync.cpp`（`SyncConfig::Save`、`SaveSyncSchedule`、`TestBackend`），上游文件里只有 `WeaselDeployer.cpp` 的一个分支和 `WeaselServerApp.cpp` 的两处调用。
+
+**`/cloudkey:<密码>` 已删除**。它是阶段四留下的权宜之计，命令行对同机其他进程可见；主密码现在只经面板的密码框进入进程。
+
+几个决定：
+
+- **页面作为资源编入可执行文件**（`IDR_SETTINGS_PAGE`，`RCDATA`），用 `NavigateToString` 加载。不落地成文件就不必改安装脚本的文件清单，也没有「面板去读安装目录里的 HTML」这条可被替换的路径。
+- **WebView2 的用户数据目录显式指向 `%LOCALAPPDATA%\Hare\WebView2`**。默认位置是可执行文件旁边，即安装目录，标准用户写不进去。
+- **只静态链接 `WebView2LoaderStatic.lib`**，不随产物分发任何 DLL。运行时本身 Windows 11 自带，Windows 10 上缺失时面板报 `IDS_STR_NO_WEBVIEW2` 并退出，而不是静默失败。
+- **消息桥不用 JSON**。传的是一条扁平记录，格式为单元分隔符隔开的 `key=value`，值按 `encodeURIComponent` 的规则百分号编码。为十几个短字符串引入一个 JSON 库，代价是每次上游合并都要多带一个依赖。
+- **凭证不回传给页面**。页面只知道某项凭证「已保存」，输入框留空即表示不改动。
+- **面向用户的文案全部在页面里**，宿主只回报状态码（`test_ok`、`key_wrong_password` 等）。这样 C++ 源码里没有一个非 ASCII 字面量，也不必在三份 `.rc` 语言块之间同步措辞。
+- **换存储才丢弃本机缓存的数据密钥**，换凭证不丢。密钥属于存储，而轮换 access key 仍是同一个存储，此时要求重新输入主密码是无谓的。
+- **同步范围的多选项暂不提供**。同步范围目前只有词库快照，配置与皮肤要等阶段四第 6 步；摆出一个不起作用的开关比没有这个开关更糟。
+
+同步计划（间隔、启动时同步）落在 `WeaselServer/SyncScheduler.h/.cpp`：常驻进程才挂得住定时器，`HareDeployer` 是一次性的。定时器**每次到点都重读注册表**，因此在面板里改间隔不需要重启服务端。不挂退出钩子——注销时进程是被杀掉的，钩子不可靠。
+
+`Configurator::SyncUserData()` 现在会区分两种失败：Rime 自身的合并失败返回 1，只有云端那一轮失败返回 `kCloudSyncFailed`（2）。此前 `PushAfterSync()` 的返回值被丢弃，上传失败与成功在界面上看起来一模一样。
+
+验收记录（对 Cloudflare R2 实测）：面板打开后正确显示注册表里已存的 S3 配置、凭证显示为「已保存」、设备标识与快照目录取自 `installation.yaml`；「测试连接」对 R2 返回成功；「保存」写回后 `DataKey` 保留、凭证二进制未变；切到本地目录后端并保存，`DataKey` 按预期被清除而 S3 各字段仍在；用错误的主密码「建立密钥」返回「密码不对」且云端密钥与本机缓存都未被改动；「立即同步」返回成功。定时器把间隔设为 1 分钟后，`HareServer` 在启动后约 25 秒拉起一次 `HareDeployer /sync`，此后每分钟一次，快照文件的时间戳随之推进。
+
+## 阶段六：图片皮肤与皮肤面板
 
 改 `WeaselUI/WeaselPanel.cpp` 的绘制路径与 `Layout` 的尺寸计算。把绘制拆成背景源、帧、合成三层，图片解码与九宫格逻辑放进新文件。附带一个 `.ssf` 解包器（ZIP 容器，`skin.ini` 为 UTF-16LE），只抽取图片资源。
 
 第一版全静态；动图与过渡动画在架构就位后接定时器实现。
+
+皮肤选择面板与阶段五的同步面板并列，复用同一套宿主与消息桥：缩略图墙、拖拽导入、九宫格边距与立绘位置编辑。**实时预览必须由真实的 D2D / GDI+ 管线出图**再送进页面，用 HTML 画一个「差不多的候选窗」只会让调出来的位置在真实渲染下对不上。
 
 ## 参考环境
 

@@ -219,9 +219,10 @@ int Configurator::SyncUserData() {
   }
 
   // Remote snapshots have to land before the merge, or the entries coming from
-  // other machines would miss this round. A failure here is logged and ignored:
-  // local synchronisation still has value on its own.
-  hare::PullBeforeSync();
+  // other machines would miss this round. A failure does not stop the local
+  // synchronisation, which is worth doing on its own, but it is reported: a
+  // cloud round that silently did nothing looks exactly like one that worked.
+  bool cloud_ok = hare::PullBeforeSync();
 
   {
     RimeApi* rime = rime_get_api();
@@ -233,7 +234,7 @@ int Configurator::SyncUserData() {
     rime->join_maintenance_thread();
   }
 
-  hare::PushAfterSync();
+  cloud_ok = hare::PushAfterSync() && cloud_ok;
 
   CloseHandle(hMutex);  // should be closed before resuming service.
 
@@ -241,5 +242,5 @@ int Configurator::SyncUserData() {
     LOG(INFO) << "Resuming service.";
     client.EndMaintenance();
   }
-  return 0;
+  return cloud_ok ? 0 : kCloudSyncFailed;
 }

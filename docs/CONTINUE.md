@@ -10,6 +10,7 @@
 | Windows SDK | 10.0.26100 或更新 |
 | Git | 克隆仓库与子模块 |
 | Node.js | 仅在需要部署 Cloudflare Worker 时用到（`npx wrangler`） |
+| WebView2 运行时 | 设置面板需要。Windows 11 自带；Windows 10 上缺失时面板会明说并退出 |
 | 一份已安装的 Rime 发行版 | 可选，用于取共享数据；没有的话构建会自动联网拉取 |
 
 MFC 只为资源脚本提供 `afxres.h`，缺了会报 `RC1015`。工具集与其他陷阱见 [BUILD.md](BUILD.md)。
@@ -67,16 +68,24 @@ Copy-Item output\Hare*.exe, output\hare*.dll <安装目录> -Force
 
 ## 四、配置云同步
 
+设置面板负责全部四种后端的配置、同步计划与主密码：
+
+```powershell
+& '<安装目录>\HareDeployer.exe' /settings
+```
+
+托盘菜单的「云同步设置」是同一个入口。填好后端、按「测试连接」确认可达、再按「建立密钥」输入主密码——首台设备生成数据密钥并发布到存储，其余设备用同一个密码把它取回来。密钥随后以 DPAPI 缓存在本机，之后的自动同步不再需要密码。
+
+**每套存储有各自独立的数据密钥。** 换了存储（换后端、换桶、换前缀）就要重新建立密钥；面板在检测到存储变了时会自动清掉本机缓存的旧密钥。换凭证不算换存储，密钥保留。
+
+脚本化配置仍然可用，适合批量铺机器：
+
 ```powershell
 pwsh tools\configure-sync.ps1 -Backend s3 -Endpoint https://<账号>.r2.cloudflarestorage.com -Bucket <桶名>
 # 密钥留空会交互式询问，不会落盘、不会进仓库
-
-& '<安装目录>\HareDeployer.exe' /cloudkey:<主密码>
 ```
 
-返回码即失败原因：0 成功、1 密码太短、2 后端未配置、3 密码错、4 密钥生成失败、5 发布失败、6 缓存失败、7 存储不可达。
-
-每套存储有各自独立的数据密钥，**换后端要重跑 `/cloudkey`**。`configure-sync.ps1` 会自动清掉本机缓存的旧密钥。
+主密码没有对应的命令行入口，这是有意的：命令行对同机其他进程可见。
 
 ## 五、怎么验证
 
@@ -103,4 +112,4 @@ pwsh tools\s3.ps1 purge ''      # 清空
 
 进度见 [ROADMAP.md](ROADMAP.md)，设计取舍见 [DESIGN.md](DESIGN.md)，审查结论见 [REVIEW-NOTES.md](REVIEW-NOTES.md)——**动云同步代码之前先读第三份**，里面记着哪些「问题」是经实测判定为不成立的，以免重复修改。
 
-下一阶段是 WebView2 设置面板。它要解决的短板很具体：主密码目前经 `HareDeployer.exe /cloudkey:<密码>` 传入，命令行对同机其他进程可见；四种后端的配置也还只能靠改注册表。
+下一阶段是图片皮肤，连同与之配套的皮肤选择面板。它要碰的是 `WeaselUI/WeaselPanel.cpp` 的绘制路径——仓库里改动最频繁的文件，因此改动面要压到最小。另有一件小事悬着：阶段三的自动更新只把 feed 地址改到了本项目，签名密钥与发布流水线还没做。

@@ -68,4 +68,9 @@ std::optional<std::vector<uint8_t>> UnwrapDataKey(
 std::optional<std::vector<uint8_t>> LoadCachedDataKey();
 bool CacheDataKey(const std::vector<uint8_t>& dek);
 
+// Drops the cached copy. Called when the configuration starts pointing at a
+// different storage, whose key is a different one; keeping the old key would
+// encrypt snapshots that nothing there can read.
+void ForgetCachedDataKey();
+
 }  // namespace hare

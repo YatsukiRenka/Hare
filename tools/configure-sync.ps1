@@ -3,6 +3,10 @@
 
 # Writes the cloud sync configuration to HKCU\Software\Rime\Hare\CloudSync.
 #
+# The settings panel - HareDeployer.exe /settings, or the tray menu - does the
+# same thing with a window. This script exists for setting up several machines
+# without clicking through it.
+#
 # Credentials are stored with DPAPI, bound to the current Windows account, and
 # deliberately kept out of the Rime user directory: that directory is itself
 # synchronised, so a secret placed there would be uploaded and would also make
@@ -17,9 +21,12 @@
 #   pwsh tools\configure-sync.ps1 -Backend webdav -DavUrl https://dav.jianguoyun.com/dav/test -DavUsername me@example.com
 #   pwsh tools\configure-sync.ps1 -Backend worker -WorkerUrl https://hare-sync.<sub>.workers.dev
 #
-# Afterwards, establish the shared data key once per machine:
+# Afterwards, establish the shared data key once per machine in the panel:
 #
-#   & "<install dir>\HareDeployer.exe" /cloudkey:<master password>
+#   & "<install dir>\HareDeployer.exe" /settings
+#
+# The master password deliberately has no command line entry point: a command
+# line is readable by every other process on the machine.
 
 param(
     [Parameter(Mandatory = $true)]
@@ -97,4 +104,4 @@ switch ($Backend) {
 Remove-ItemProperty -Path $key -Name 'DataKey' -ErrorAction SilentlyContinue
 
 Write-Host "backend set to $Backend"
-Write-Host 'run HareDeployer.exe /cloudkey:<master password> to establish the data key'
+Write-Host 'run HareDeployer.exe /settings to establish the data key'

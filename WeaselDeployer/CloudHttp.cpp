@@ -229,6 +229,21 @@ HttpResponse HttpRequest(const std::wstring& method,
   return response;
 }
 
+std::vector<uint8_t> Protect(const std::string& plain) {
+  DATA_BLOB in = {};
+  in.cbData = static_cast<DWORD>(plain.size());
+  in.pbData = reinterpret_cast<BYTE*>(const_cast<char*>(plain.data()));
+
+  DATA_BLOB out = {};
+  if (!CryptProtectData(&in, L"Hare cloud sync credential", nullptr, nullptr,
+                        nullptr, 0, &out)) {
+    return {};
+  }
+  std::vector<uint8_t> result(out.pbData, out.pbData + out.cbData);
+  LocalFree(out.pbData);
+  return result;
+}
+
 std::string Unprotect(const std::vector<uint8_t>& encrypted) {
   if (encrypted.empty())
     return {};

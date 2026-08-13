@@ -10,6 +10,8 @@
 #include <cstring>
 #include <memory>
 
+#include <HareCloudSync.h>
+
 #include "CloudHttp.h"
 
 extern "C" {
@@ -23,7 +25,7 @@ namespace hare {
 
 namespace {
 
-constexpr const wchar_t* kConfigKey = L"Software\\Rime\\Hare\\CloudSync";
+constexpr const wchar_t* kConfigKey = kCloudSyncKey;
 constexpr const wchar_t* kCachedKeyValue = L"DataKey";
 
 // Marks the wrapped key format so a future change can be told apart from a
@@ -295,6 +297,16 @@ bool CacheDataKey(const std::vector<uint8_t>& dek) {
   if (sealed.empty())
     return false;
   return WriteRegBinary(kCachedKeyValue, sealed);
+}
+
+void ForgetCachedDataKey() {
+  HKEY key = nullptr;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER, kConfigKey, 0, KEY_SET_VALUE, &key) !=
+      ERROR_SUCCESS) {
+    return;
+  }
+  RegDeleteValueW(key, kCachedKeyValue);
+  RegCloseKey(key);
 }
 
 }  // namespace hare

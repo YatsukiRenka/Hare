@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<!--
+  SPDX-License-Identifier: AGPL-3.0-or-later
+  Copyright (C) 2026 Yatsuki Renka
+
+  The cloud sync settings panel. Compiled into HareDeployer.exe as an RCDATA
+  resource and handed to WebView2 with NavigateToString, so it loads no remote
+  resource and needs no file deployed next to the executable.
+
+  Messages travel as unit-separated key=value pairs with percent-encoded values;
+  see SettingsPanel.cpp for the other half of the protocol.
+-->
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>云同步设置</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1c1b1f;
+  --muted: #5f5b66;
+  --line: #dcd9e3;
+  --field: #ffffff;
+  --accent: #6b4ea8;
+  --accent-fg: #ffffff;
+  --ok: #1f7a4d;
+  --error: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1a1f;
+    --fg: #e8e4ee;
+    --muted: #a29daf;
+    --line: #35323d;
+    --field: #232128;
+    --accent: #b9a2e8;
+    --accent-fg: #241a3a;
+    --ok: #7ad6a4;
+    --error: #f2b8b5;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 28px 96px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+}
+h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+h2 { font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+p.lede { color: var(--muted); margin: 0 0 24px; }
+section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px 20px;
+  margin-bottom: 16px;
+}
+.row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.row:last-child { margin-bottom: 0; }
+label.field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 260px; }
+label.field > span { color: var(--muted); font-size: 12px; }
+input[type=text], input[type=password], input[type=number] {
+  font: inherit;
+  color: inherit;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  min-width: 0;
+}
+input:focus-visible, button:focus-visible, input[type=radio]:focus-visible,
+input[type=checkbox]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+fieldset { border: 0; margin: 0; padding: 0; }
+legend { padding: 0; margin: 0 0 12px; font-weight: 600; }
+.choices { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px; }
+.choices label { display: flex; align-items: center; gap: 8px; }
+.inline { display: flex; align-items: center; gap: 8px; }
+.hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+[hidden] { display: none !important; }
+footer {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 28px;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+button {
+  font: inherit;
+  padding: 6px 16px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  color: inherit;
+  cursor: pointer;
+}
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+button[disabled] { opacity: .5; cursor: default; }
+#status { flex: 1 1 auto; min-width: 0; color: var(--muted); }
+#status.ok { color: var(--ok); }
+#status.error { color: var(--error); }
+dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 0; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<h1>云同步设置</h1>
+<p class="lede">词库快照在离开本机前已用主密码派生的密钥加密，凭证以 DPAPI 存在本机注册表，不随同步上传。</p>
+
+<section>
+  <fieldset>
+    <legend>存储后端</legend>
+    <div class="choices" role="radiogroup">
+      <label><input type="radio" name="backend" value="none"> 关闭</label>
+      <label><input type="radio" name="backend" value="localdir"> 本地目录</label>
+      <label><input type="radio" name="backend" value="s3"> S3 兼容存储</label>
+      <label><input type="radio" name="backend" value="webdav"> WebDAV</label>
+      <label><input type="radio" name="backend" value="worker"> Worker 代理</label>
+    </div>
+
+    <div data-pane="localdir" hidden>
+      <div class="row">
+        <label class="field"><span>目录路径</span>
+          <input type="text" id="localDir" placeholder="D:\Sync\Hare"></label>
+      </div>
+      <p class="hint">配合任意网盘的同步文件夹使用。</p>
+    </div>
+
+    <div data-pane="s3" hidden>
+      <div class="row">
+        <label class="field"><span>Endpoint</span>
+          <input type="text" id="endpoint" placeholder="https://&lt;账号&gt;.r2.cloudflarestorage.com"></label>
+        <label class="field"><span>桶名</span><input type="text" id="bucket"></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>前缀</span><input type="text" id="prefix" placeholder="hare/"></label>
+        <label class="field"><span>Access Key ID</span>
+          <input type="password" id="accessKey" autocomplete="off"></label>
+        <label class="field"><span>Secret Access Key</span>
+          <input type="password" id="secretKey" autocomplete="off"></label>
+      </div>
+      <p class="hint">已保存的凭证不会回显，留空即保持不变。</p>
+    </div>
+
+    <div data-pane="webdav" hidden>
+      <div class="row">
+        <label class="field"><span>服务地址</span>
+          <input type="text" id="davUrl" placeholder="https://dav.jianguoyun.com/dav/hare"></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>用户名</span><input type="text" id="davUsername"></label>
+        <label class="field"><span>应用密码</span>
+          <input type="password" id="davPassword" autocomplete="off"></label>
+      </div>
+      <p class="hint">坚果云等服务需要在网页端单独生成应用密码，而不是登录密码。</p>
+    </div>
+
+    <div data-pane="worker" hidden>
+      <div class="row">
+        <label class="field"><span>Worker 网址</span>
+          <input type="text" id="workerUrl" placeholder="https://hare-sync.&lt;子域&gt;.workers.dev"></label>
+        <label class="field"><span>访问口令</span>
+          <input type="password" id="workerToken" autocomplete="off"></label>
+      </div>
+      <p class="hint">Worker 自己持有 R2 凭证，本机只需要这两项。</p>
+    </div>
+  </fieldset>
+</section>
+
+<section>
+  <h2>同步计划</h2>
+  <div class="row">
+    <label class="field" style="flex: 0 0 160px;"><span>间隔（分钟，0 为不定时）</span>
+      <input type="number" id="intervalMinutes" min="0" max="1440" step="5"></label>
+    <label class="inline" style="align-self: end; padding-bottom: 7px;">
+      <input type="checkbox" id="syncOnStartup"> 启动时同步一次</label>
+  </div>
+  <p class="hint">定时器挂在常驻的 HareServer 上，它每次到点都会重读这两项，因此改动最迟在下一次触发时生效。</p>
+</section>
+
+<section>
+  <h2>主密码</h2>
+  <div class="row">
+    <label class="field"><span>主密码（至少 10 位）</span>
+      <input type="password" id="password" autocomplete="off"></label>
+    <label class="field"><span>再输一次</span>
+      <input type="password" id="passwordAgain" autocomplete="off"></label>
+  </div>
+  <p class="hint" id="keyState"></p>
+  <p class="hint">首台设备设定密码并生成数据密钥，其余设备用同一个密码取回它。密钥随后以 DPAPI 缓存在本机，之后的自动同步不再需要密码。</p>
+</section>
+
+<section>
+  <h2>本机</h2>
+  <dl class="facts">
+    <dt>设备标识</dt><dd id="installationId">—</dd>
+    <dt>快照目录</dt><dd id="syncDir">—</dd>
+  </dl>
+</section>
+
+<footer>
+  <span id="status" role="status" aria-live="polite"></span>
+  <button id="test">测试连接</button>
+  <button id="key">建立密钥</button>
+  <button id="sync">立即同步</button>
+  <button id="save" class="primary">保存</button>
+</footer>
+
+<script>
+'use strict';
+const US = '\u001f';
+const $ = (id) => document.getElementById(id);
+const TEXT_FIELDS = ['localDir', 'endpoint', 'bucket', 'prefix', 'davUrl', 'davUsername', 'workerUrl'];
+const SECRET_FIELDS = ['accessKey', 'secretKey', 'davPassword', 'workerToken'];
+const BUTTONS = ['test', 'key', 'sync', 'save'];
+
+function backend() {
+  const picked = document.querySelector('input[name=backend]:checked');
+  return picked ? picked.value : 'none';
+}
+
+function showPane() {
+  const current = backend();
+  document.querySelectorAll('[data-pane]').forEach((pane) => {
+    pane.hidden = pane.dataset.pane !== current;
+  });
+}
+
+function collect() {
+  const fields = { backend: backend() };
+  for (const id of TEXT_FIELDS.concat(SECRET_FIELDS)) fields[id] = $(id).value.trim();
+  fields.intervalMinutes = $('intervalMinutes').value || '0';
+  fields.syncOnStartup = $('syncOnStartup').checked ? '1' : '0';
+  return fields;
+}
+
+function send(verb, fields) {
+  const parts = [verb];
+  for (const [key, value] of Object.entries(fields || {})) {
+    parts.push(key + '=' + encodeURIComponent(value));
+  }
+  window.chrome.webview.postMessage(parts.join(US));
+}
+
+function busy(on) {
+  BUTTONS.forEach((id) => { $(id).disabled = on; });
+}
+
+// The host reports outcomes as codes and the wording lives here, so every
+// user-facing string in the panel sits in one file.
+const TEXT = {
+  busy_test: '正在连接存储…',
+  busy_key: '正在派生密钥，约需数秒…',
+  busy_sync: '正在同步…',
+  saved: '设置已保存',
+  save_failed: '设置写入失败，注册表不可写',
+  test_ok: '连接成功',
+  test_incomplete: '配置尚不完整',
+  test_unreachable: '连不上：检查地址、凭证与网络',
+  key_ok: '数据密钥已就绪',
+  key_short: '主密码至少 10 位',
+  key_no_backend: '后端配置不完整，先填好再建立密钥',
+  key_wrong_password: '密码不对：这个存储上的密钥解不开',
+  key_generate_failed: '生成密钥失败',
+  key_publish_failed: '密钥写不进存储',
+  key_cache_failed: '密钥无法缓存到本机',
+  key_unreachable: '存储不可达，未做任何改动',
+  sync_ok: '同步完成',
+  sync_cloud_failed: '本机词库已合并，但云端这一轮没成：检查密钥与连接',
+  sync_failed: '同步失败'
+};
+
+function status(level, code) {
+  const node = $('status');
+  node.className = level === 'busy' ? '' : level;
+  node.textContent = TEXT[code] || code || '';
+}
+
+function apply(values) {
+  const chosen = values.backend || 'none';
+  const radio = document.querySelector(`input[name=backend][value="${chosen}"]`);
+  (radio || document.querySelector('input[name=backend][value=none]')).checked = true;
+  for (const id of TEXT_FIELDS) $(id).value = values[id] || '';
+  // Stored credentials stay in the host process; the page only learns whether
+  // one exists, which is all it needs to explain an empty field.
+  for (const id of SECRET_FIELDS) {
+    $(id).value = '';
+    $(id).placeholder = values['has_' + id] === '1' ? '已保存' : '';
+  }
+  $('intervalMinutes').value = values.intervalMinutes || '0';
+  $('syncOnStartup').checked = values.syncOnStartup === '1';
+  $('installationId').textContent = values.installationId || '尚未部署';
+  $('syncDir').textContent = values.syncDir || '—';
+  $('keyState').textContent = values.hasDataKey === '1'
+    ? '本机已缓存数据密钥，无需再次输入密码；换密码或换存储后再输。'
+    : '本机尚未持有数据密钥，同步会一直失败，直到在此设定主密码。';
+  showPane();
+}
+
+function password() {
+  const value = $('password').value;
+  if (value !== $('passwordAgain').value) {
+    status('error', '两次输入的密码不一致');
+    return null;
+  }
+  if (value.length < 10) {
+    status('error', '主密码至少 10 位');
+    return null;
+  }
+  return value;
+}
+
+document.querySelectorAll('input[name=backend]').forEach((radio) => {
+  radio.addEventListener('change', showPane);
+});
+
+$('save').addEventListener('click', () => send('save', collect()));
+$('test').addEventListener('click', () => send('test', collect()));
+$('sync').addEventListener('click', () => send('sync', {}));
+$('key').addEventListener('click', () => {
+  const secret = password();
+  if (secret === null) return;
+  // The configuration is saved in the same step: the key belongs to whichever
+  // storage is in effect, so establishing one against unsaved settings would
+  // attach it to the wrong place.
+  send('setkey', Object.assign(collect(), { password: secret }));
+});
+
+window.chrome.webview.addEventListener('message', (event) => {
+  const parts = String(event.data).split(US);
+  const verb = parts.shift();
+  const values = {};
+  for (const part of parts) {
+    const split = part.indexOf('=');
+    if (split > 0) values[part.slice(0, split)] = decodeURIComponent(part.slice(split + 1));
+  }
+  if (verb === 'settings') {
+    apply(values);
+  } else if (verb === 'status') {
+    busy(values.level === 'busy');
+    status(values.level, values.code);
+    // The host asks for this once the password has served its purpose, so a
+    // panel left open does not keep it around.
+    if (values.clear === '1') {
+      $('password').value = '';
+      $('passwordAgain').value = '';
+    }
+  }
+});
+
+send('load', {});
+</script>
+</body>
+</html>

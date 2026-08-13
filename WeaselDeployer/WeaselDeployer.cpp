@@ -6,6 +6,7 @@
 #include "WeaselDeployer.h"
 #include "Configurator.h"
 #include "CloudSync.h"
+#include "SettingsPanel.h"
 
 CAppModule _Module;
 
@@ -63,13 +64,12 @@ static int Run(LPTSTR lpCmdLine) {
   Configurator configurator;
   configurator.Initialize();
 
-  // Establishes the shared data key for cloud sync. A settings panel replaces
-  // this once the interface exists; until then the password travels on the
-  // command line, which is visible to other processes on the machine.
-  constexpr const wchar_t* kCloudKeyOption = L"/cloudkey:";
-  if (wcsncmp(lpCmdLine, kCloudKeyOption, wcslen(kCloudKeyOption)) == 0) {
-    const std::wstring password(lpCmdLine + wcslen(kCloudKeyOption));
-    return static_cast<int>(hare::SetUpDataKey(wtou8(password)));
+  // Cloud sync is configured here, master password included. Taking the
+  // password through a window rather than a command line argument is the point:
+  // a command line is readable by every other process on the machine.
+  if (!wcscmp(L"/settings", lpCmdLine)) {
+    return hare::ShowSettingsPanel(
+        [&configurator] { return configurator.SyncUserData(); });
   }
 
   if (!wcscmp(L"/?", lpCmdLine) || !wcscmp(L"/help", lpCmdLine)) {
@@ -84,6 +84,7 @@ static int Run(LPTSTR lpCmdLine) {
                  L"/deploy		- Update Workspace\n"
                  L"/dict		- Manage dictionary\n"
                  L"/sync		- Sync user data\n"
+                 L"/settings		- Cloud sync settings\n"
                  L"/install		- Install Weasel (Initial deployment)",
                  L"Weasel Deployer", MB_ICONINFORMATION | MB_OK);
     }

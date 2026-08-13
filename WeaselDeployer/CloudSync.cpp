@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "CloudSync.h"
 
+#include <HareCloudSync.h>
 #include <WeaselUtility.h>
 
 #include <fstream>
@@ -22,7 +23,7 @@ namespace hare {
 
 namespace {
 
-constexpr const wchar_t* kConfigKey = L"Software\\Rime\\Hare\\CloudSync";
+constexpr const wchar_t* kConfigKey = kCloudSyncKey;
 
 // Where the wrapped data key lives inside the storage. It is the one object
 // every device reads before anything else.
@@ -205,6 +206,137 @@ std::vector<uint8_t> CachedKeyOrEmpty() {
   return cached ? *cached : std::vector<uint8_t>();
 }
 
+bool WriteRegString(const wchar_t* value, const std::wstring& data) {
+  HKEY key = nullptr;
+  if (RegCreateKeyExW(HKEY_CURRENT_USER, kConfigKey, 0, nullptr, 0,
+                      KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
+    return false;
+  }
+  const LSTATUS status = RegSetValueExW(
+      key, value, 0, REG_SZ, reinterpret_cast<const BYTE*>(data.c_str()),
+      static_cast<DWORD>((data.size() + 1) * sizeof(wchar_t)));
+  RegCloseKey(key);
+  return status == ERROR_SUCCESS;
+}
+
+bool WriteRegDword(const wchar_t* value, DWORD data) {
+  HKEY key = nullptr;
+  if (RegCreateKeyExW(HKEY_CURRENT_USER, kConfigKey, 0, nullptr, 0,
+                      KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
+    return false;
+  }
+  const LSTATUS status =
+      RegSetValueExW(key, value, 0, REG_DWORD,
+                     reinterpret_cast<const BYTE*>(&data), sizeof(data));
+  RegCloseKey(key);
+  return status == ERROR_SUCCESS;
+}
+
+// An empty secret means "leave what is stored alone". The panel shows saved
+// credentials as blank fields rather than sending them back to the page, so
+// blank has to mean unchanged; clearing one happens by switching backends.
+bool WriteRegSecret(const wchar_t* value, const std::string& secret) {
+  if (secret.empty())
+    return true;
+  const std::vector<uint8_t> sealed = Protect(secret);
+  if (sealed.empty())
+    return false;
+
+  HKEY key = nullptr;
+  if (RegCreateKeyExW(HKEY_CURRENT_USER, kConfigKey, 0, nullptr, 0,
+                      KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
+    return false;
+  }
+  const LSTATUS status =
+      RegSetValueExW(key, value, 0, REG_BINARY, sealed.data(),
+                     static_cast<DWORD>(sealed.size()));
+  RegCloseKey(key);
+  return status == ERROR_SUCCESS;
+}
+
+std::wstring BackendName(SyncConfig::Backend backend) {
+  switch (backend) {
+    case SyncConfig::Backend::kLocalDir:
+      return L"localdir";
+    case SyncConfig::Backend::kS3:
+      return L"s3";
+    case SyncConfig::Backend::kWebDav:
+      return L"webdav";
+    case SyncConfig::Backend::kWorker:
+      return L"worker";
+    case SyncConfig::Backend::kNone:
+    default:
+      return L"none";
+  }
+}
+
+// What the data key belongs to. Credentials are left out on purpose: rotating
+// an access key still addresses the same storage, and forgetting the key then
+// would ask for the master password again for no reason.
+std::wstring StorageIdentity(const SyncConfig& config) {
+  switch (config.backend) {
+    case SyncConfig::Backend::kLocalDir:
+      return L"localdir|" + config.local_dir;
+    case SyncConfig::Backend::kS3:
+      return L"s3|" + u8tow(config.endpoint + "|" + config.bucket + "|" +
+                            config.prefix);
+    case SyncConfig::Backend::kWebDav:
+      return L"webdav|" + u8tow(config.dav_url);
+    case SyncConfig::Backend::kWorker:
+      return L"worker|" + u8tow(config.worker_url);
+    case SyncConfig::Backend::kNone:
+    default:
+      return L"none";
+  }
+}
+
+// `require_complete` decides what happens to a backend that is missing a field
+// it needs: a sync has to treat it as switched off, while the panel has to keep
+// showing it so the user can finish filling it in.
+SyncConfig LoadConfig(bool require_complete) {
+  SyncConfig config;
+  const std::wstring backend = ReadRegString(kConfigKey, L"Backend");
+  if (backend == L"localdir") {
+    config.backend = SyncConfig::Backend::kLocalDir;
+    config.local_dir = ReadRegString(kConfigKey, L"LocalDir");
+    if (require_complete && config.local_dir.empty())
+      config.backend = SyncConfig::Backend::kNone;
+  } else if (backend == L"s3") {
+    config.backend = SyncConfig::Backend::kS3;
+    config.endpoint = wtou8(ReadRegString(kConfigKey, L"Endpoint"));
+    config.bucket = wtou8(ReadRegString(kConfigKey, L"Bucket"));
+    config.prefix = wtou8(ReadRegString(kConfigKey, L"Prefix"));
+    if (config.prefix.empty())
+      config.prefix = "hare/";
+    config.access_key = ReadRegSecret(kConfigKey, L"AccessKeyId");
+    config.secret_key = ReadRegSecret(kConfigKey, L"SecretAccessKey");
+    if (require_complete &&
+        (config.endpoint.empty() || config.bucket.empty() ||
+         config.access_key.empty() || config.secret_key.empty())) {
+      config.backend = SyncConfig::Backend::kNone;
+    }
+  } else if (backend == L"webdav") {
+    config.backend = SyncConfig::Backend::kWebDav;
+    config.dav_url = wtou8(ReadRegString(kConfigKey, L"DavUrl"));
+    config.dav_username = wtou8(ReadRegString(kConfigKey, L"DavUsername"));
+    config.dav_password = ReadRegSecret(kConfigKey, L"DavPassword");
+    if (require_complete &&
+        (config.dav_url.empty() || config.dav_username.empty() ||
+         config.dav_password.empty())) {
+      config.backend = SyncConfig::Backend::kNone;
+    }
+  } else if (backend == L"worker") {
+    config.backend = SyncConfig::Backend::kWorker;
+    config.worker_url = wtou8(ReadRegString(kConfigKey, L"WorkerUrl"));
+    config.worker_token = ReadRegSecret(kConfigKey, L"WorkerToken");
+    if (require_complete &&
+        (config.worker_url.empty() || config.worker_token.empty())) {
+      config.backend = SyncConfig::Backend::kNone;
+    }
+  }
+  return config;
+}
+
 }  // namespace
 
 bool IsSyncableSnapshot(const fs::path& file) {
@@ -218,43 +350,79 @@ bool IsSyncableSnapshot(const fs::path& file) {
 }
 
 SyncConfig SyncConfig::Load() {
-  SyncConfig config;
-  const std::wstring backend = ReadRegString(kConfigKey, L"Backend");
-  if (backend == L"localdir") {
-    config.backend = Backend::kLocalDir;
-    config.local_dir = ReadRegString(kConfigKey, L"LocalDir");
-    if (config.local_dir.empty())
-      config.backend = Backend::kNone;
-  } else if (backend == L"s3") {
-    config.backend = Backend::kS3;
-    config.endpoint = wtou8(ReadRegString(kConfigKey, L"Endpoint"));
-    config.bucket = wtou8(ReadRegString(kConfigKey, L"Bucket"));
-    config.prefix = wtou8(ReadRegString(kConfigKey, L"Prefix"));
-    if (config.prefix.empty())
-      config.prefix = "hare/";
-    config.access_key = ReadRegSecret(kConfigKey, L"AccessKeyId");
-    config.secret_key = ReadRegSecret(kConfigKey, L"SecretAccessKey");
-    if (config.endpoint.empty() || config.bucket.empty() ||
-        config.access_key.empty() || config.secret_key.empty()) {
-      config.backend = Backend::kNone;
-    }
-  } else if (backend == L"webdav") {
-    config.backend = Backend::kWebDav;
-    config.dav_url = wtou8(ReadRegString(kConfigKey, L"DavUrl"));
-    config.dav_username = wtou8(ReadRegString(kConfigKey, L"DavUsername"));
-    config.dav_password = ReadRegSecret(kConfigKey, L"DavPassword");
-    if (config.dav_url.empty() || config.dav_username.empty() ||
-        config.dav_password.empty()) {
-      config.backend = Backend::kNone;
-    }
-  } else if (backend == L"worker") {
-    config.backend = Backend::kWorker;
-    config.worker_url = wtou8(ReadRegString(kConfigKey, L"WorkerUrl"));
-    config.worker_token = ReadRegSecret(kConfigKey, L"WorkerToken");
-    if (config.worker_url.empty() || config.worker_token.empty())
-      config.backend = Backend::kNone;
+  return LoadConfig(true);
+}
+
+SyncConfig SyncConfig::LoadForEditing() {
+  return LoadConfig(false);
+}
+
+bool SyncConfig::Save() const {
+  const std::wstring previous = StorageIdentity(LoadConfig(false));
+
+  bool ok = WriteRegString(L"Backend", BackendName(backend));
+  switch (backend) {
+    case Backend::kLocalDir:
+      ok = WriteRegString(L"LocalDir", local_dir) && ok;
+      break;
+    case Backend::kS3:
+      ok = WriteRegString(L"Endpoint", u8tow(endpoint)) && ok;
+      ok = WriteRegString(L"Bucket", u8tow(bucket)) && ok;
+      ok = WriteRegString(L"Prefix", u8tow(prefix)) && ok;
+      ok = WriteRegSecret(L"AccessKeyId", access_key) && ok;
+      ok = WriteRegSecret(L"SecretAccessKey", secret_key) && ok;
+      break;
+    case Backend::kWebDav:
+      ok = WriteRegString(L"DavUrl", u8tow(dav_url)) && ok;
+      ok = WriteRegString(L"DavUsername", u8tow(dav_username)) && ok;
+      ok = WriteRegSecret(L"DavPassword", dav_password) && ok;
+      break;
+    case Backend::kWorker:
+      ok = WriteRegString(L"WorkerUrl", u8tow(worker_url)) && ok;
+      ok = WriteRegSecret(L"WorkerToken", worker_token) && ok;
+      break;
+    case Backend::kNone:
+    default:
+      break;
   }
-  return config;
+
+  // Reading back what was actually stored, rather than trusting these fields,
+  // keeps the comparison honest when a write only half succeeded.
+  if (StorageIdentity(LoadConfig(false)) != previous)
+    ForgetCachedDataKey();
+  return ok;
+}
+
+bool SaveSyncSchedule(unsigned interval_minutes, bool on_startup) {
+  const DWORD minutes = interval_minutes > kMaxIntervalMinutes
+                            ? kMaxIntervalMinutes
+                            : static_cast<DWORD>(interval_minutes);
+  bool ok = WriteRegDword(kIntervalMinutesValue, minutes);
+  ok = WriteRegDword(kSyncOnStartupValue, on_startup ? 1 : 0) && ok;
+  return ok;
+}
+
+BackendTestResult TestBackend(const SyncConfig& config) {
+  // A local directory that does not exist yet is not a failure - the first push
+  // creates it - but a path that cannot be created is, and List() would report
+  // an empty directory either way.
+  if (config.backend == SyncConfig::Backend::kLocalDir) {
+    if (config.local_dir.empty())
+      return BackendTestResult::kNotConfigured;
+    std::error_code ec;
+    fs::create_directories(fs::path(config.local_dir), ec);
+    if (!fs::is_directory(fs::path(config.local_dir), ec))
+      return BackendTestResult::kUnreachable;
+  }
+
+  auto backend = MakeBackend(config);
+  if (!backend)
+    return BackendTestResult::kNotConfigured;
+
+  std::vector<std::string> names;
+  if (!backend->List(&names))
+    return BackendTestResult::kUnreachable;
+  return BackendTestResult::kOk;
 }
 
 std::unique_ptr<SyncBackend> MakeBackend(const SyncConfig& config) {

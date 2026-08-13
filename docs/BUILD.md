@@ -28,6 +28,7 @@ cmd /c tools\build-hare.bat installer    # 另外打 NSIS 安装包
 | Windows SDK | 10.0.26100.0 | |
 | Boost | 1.91.0，静态，`vc145` 标签 | 只编 serialization 与 thread |
 | librime | 预编译，`rime-33e7814` | 不从源码构建 |
+| WebView2 SDK | 1.0.4129.50，`deps\webview2` | 由 `install-deps.ps1` 从 nuget.org 取，只留头文件与静态加载器 |
 
 VS 组件要求：「使用 C++ 的桌面开发」工作负载 + **C++ ATL** + **C++ MFC**（组件 ID `Microsoft.VisualStudio.Component.VC.ATLMFC`）。ATL 供 C++ 代码使用，MFC 只为资源脚本提供 `afxres.h`。
 
@@ -80,6 +81,14 @@ weasel 直接使用 `boost::serialization`（`text_oarchive` / `text_woarchive`�
 工程通过 `$(BOOST_ROOT)` 取头文件、`$(BOOST_ROOT)\stage\lib` 取库，所以 b2 必须用 `stage` 目标。x64 与 Win32 的库带不同架构标签，可以共存于同一个 `stage\lib`。
 
 上游的 `install_boost.bat` 依赖 `aria2c` 和 `7z`，两者常常缺失，`tools\install-deps.ps1` 改用 curl 下载并自动寻找 7z。
+
+### WebView2 SDK
+
+`install-deps.ps1` 下载 `Microsoft.Web.WebView2` 的 nupkg（就是个 zip），从中取四样东西：`WebView2.h`、`WebView2EnvironmentOptions.h`，以及 x64 与 x86 的 `WebView2LoaderStatic.lib`。x86 那份落到 `deps\webview2\Win32\`，因为 MSBuild 管 32 位叫 `Win32`，工程于是可以无条件写 `deps\webview2\$(Platform)`。
+
+**只取静态加载器**：产物旁边不需要多一个 `WebView2Loader.dll`，安装脚本的文件清单也不必跟着改。它与工程的 `/MT` 静态 CRT 直接兼容，无需额外开关。
+
+运行时（Microsoft Edge WebView2 Runtime）是另一回事，不随本项目分发：Windows 11 自带，Windows 10 上要用户自己装。缺失时 `GetAvailableCoreWebView2BrowserVersionString` 会失败，设置面板据此提示并退出。
 
 ### output\data
 

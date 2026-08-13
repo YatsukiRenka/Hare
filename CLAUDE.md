@@ -16,7 +16,7 @@
 
 **新功能写进新文件，在上游文件里只留一个调用点。** 这是这个分支能长期跟上游走的唯一办法。改动落点的选择要参考 `docs/ROADMAP.md` 里的上游改动频率表。
 
-**不引入新的第三方库。** HTTP 用 WinHTTP，加解密用 CNG，都是系统自带。已有的依赖只有 Boost、ATL、预编译的 librime。
+**能用系统自带的就不引入第三方库。** HTTP 用 WinHTTP，加解密用 CNG，界面用 ATL/WTL 与 WebView2，都不需要额外分发。已有的依赖只有 Boost、ATL/WTL、预编译的 librime、WebView2 SDK（只取头文件与静态加载器）与 Argon2 参考实现。加一个依赖之前先问它抵不抵得上每次上游合并多带的那份负担。
 
 **用 merge 而非 rebase 同步上游**，保留改动历史。
 

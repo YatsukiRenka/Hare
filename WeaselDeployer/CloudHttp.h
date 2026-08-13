@@ -45,6 +45,10 @@ std::string Base64(const std::string& data);
 // DPAPI, bound to the current Windows account. Credentials never leave the
 // machine in the clear and never enter the Rime user directory, which is
 // itself synchronised.
+//
+// No entropy is passed, which matches what tools\configure-sync.ps1 produces:
+// blobs written by either route have to be readable by the other.
+std::vector<uint8_t> Protect(const std::string& plain);
 std::string Unprotect(const std::vector<uint8_t>& encrypted);
 
 }  // namespace hare

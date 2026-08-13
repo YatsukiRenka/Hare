@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "WeaselServerApp.h"
+#include "SyncScheduler.h"
 #include <filesystem>
 
 WeaselServerApp::WeaselServerApp()
@@ -37,6 +38,11 @@ int WeaselServerApp::Run() {
   tray_icon.Create(m_server.GetHWnd());
   tray_icon.Refresh();
 
+  // Scheduled cloud sync. It stops when this scope ends, which is the only way
+  // it can be stopped reliably: at logoff the process is killed outright.
+  hare::SyncScheduler sync_scheduler;
+  sync_scheduler.Start(install_dir() / L"HareDeployer.exe");
+
   int ret = m_server.Run();
 
   m_handler->Finalize();
@@ -63,6 +69,9 @@ void WeaselServerApp::SetupMenuHandlers() {
   m_server.AddMenuHandler(
       ID_WEASELTRAY_SYNC,
       std::bind(execute, dir / L"HareDeployer.exe", std::wstring(L"/sync")));
+  m_server.AddMenuHandler(ID_WEASELTRAY_CLOUD_SETTINGS,
+                          std::bind(execute, dir / L"HareDeployer.exe",
+                                    std::wstring(L"/settings")));
   m_server.AddMenuHandler(ID_WEASELTRAY_WIKI,
                           std::bind(open, L"https://rime.im/docs/"));
   m_server.AddMenuHandler(ID_WEASELTRAY_HOMEPAGE,

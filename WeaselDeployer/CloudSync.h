@@ -75,10 +75,38 @@ struct SyncConfig {
   // Reads HKCU\Software\Rime\Hare\CloudSync. Credentials are kept out of the
   // Rime user directory on purpose: that directory is itself synchronised, so
   // storing them there would upload them and create a bootstrap cycle.
+  //
+  // A configuration missing a field it needs reports itself as disabled, so a
+  // half-entered backend never takes part in a sync.
   static SyncConfig Load();
+
+  // The same values as Load(), except that the selected backend survives
+  // missing fields. The settings panel edits what is stored, and resetting the
+  // user's choice to "off" because one field is still blank would lose it.
+  static SyncConfig LoadForEditing();
+
+  // Writes the configuration back to the registry, with credentials under
+  // DPAPI. An empty credential leaves the stored one untouched: the panel never
+  // sends a saved secret back to the page, so "unchanged" arrives as empty.
+  //
+  // Pointing at a different storage forgets the locally cached data key. Every
+  // storage publishes its own key, and keeping the previous one would only
+  // produce snapshots the new storage cannot decrypt.
+  bool Save() const;
 
   bool enabled() const { return backend != Backend::kNone; }
 };
+
+// Scheduling lives next to the rest of the configuration but is read by the
+// server, which triggers synchronisation; see include\HareCloudSync.h.
+bool SaveSyncSchedule(unsigned interval_minutes, bool on_startup);
+
+// Reaches the storage with the given settings without touching the registry,
+// so the panel can check credentials before saving them. "Not configured" and
+// "unreachable" stay apart: they call for different corrections.
+enum class BackendTestResult { kOk, kNotConfigured, kUnreachable };
+
+BackendTestResult TestBackend(const SyncConfig& config);
 
 std::unique_ptr<SyncBackend> MakeBackend(const SyncConfig& config);
 

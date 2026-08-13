@@ -16,6 +16,8 @@ Windows 平台的 Rime 输入法，[小狼毫（rime/weasel）](https://github.c
 | 云同步设置面板 | 可用 |
 | 定时同步 | 可用 |
 | 图片皮肤与皮肤面板 | 未开始 |
+| 独立用户目录与数据导入 | 未开始，目前靠注册表 `RimeUserDir` 手工分开 |
+| 符号候选（序号、箭头、符号键） | 未开始 |
 | 自动更新指向本项目 | 地址已改，签名与发布流水线未做 |
 
 尚无发布版本。想用得自己编译，见 [docs/BUILD.md](docs/BUILD.md)。
@@ -41,7 +43,9 @@ Rime 自带把用户词库导出为快照、再合并其他机器快照的机制
 
 S3 后端在 Cloudflare R2 上验证过，也适用于 MinIO、Backblaze B2 等；WebDAV 在坚果云上验证过。[`worker/`](worker/) 里的 Cloudflare Worker 是为了把配置从四项压到两项——它自己持有 R2 凭证，用户不必接触。
 
-后端、凭证、主密码、同步间隔都在设置面板里填，入口是托盘菜单的「云同步设置」。定时同步挂在常驻的 `HareServer` 上，默认每小时一次并在启动时同步一次。
+后端、凭证、主密码、同步间隔都在设置面板里填。三个入口：托盘图标与语言栏按钮的右键菜单「云同步设置」，开始菜单的「【紫毫】云同步设置」，或 `HareDeployer.exe /settings`。**主密码没有命令行入口**——命令行对同机其他进程可见。
+
+定时同步挂在常驻的 `HareServer` 上，默认每小时一次并在启动时同步一次；它每次到点都会重读设置，改了间隔不必重启。
 
 **加密**。词库记录了用户输入过的每一个词，因此在离开本机前就已加密：
 
@@ -58,19 +62,27 @@ S3 后端在 Cloudflare R2 上验证过，也适用于 MinIO、Backblaze B2 等�
 
 两者设计为可并存：TSF GUID、注册表路径、可执行文件名、安装目录、IPC 通道全部独立。
 
-但**用户目录与配置文件名刻意保持一致**（`weasel.yaml`、`weasel.custom.yaml`、`%APPDATA%\Rime` 语义），因此万象拼音、雾凇拼音这类现成配置可以直接使用。
+**配置文件名保持一致**（`weasel.yaml`、`weasel.custom.yaml`、`%APPDATA%\Rime` 语义），因此万象拼音、雾凇拼音这类现成配置直接可用。
 
-一个限制：用户词库是 LevelDB，开启时持有排他锁，所以共用同一个用户目录时**同一时刻只能运行一个**。日常使用无影响，两个都装着调试时需要先退出另一个。
+但**不要让两者共用同一个用户目录**，代价有两条：
+
+- `installation.yaml` 只记得住一个发行版及其 librime 版本，两者版本不同，于是每次切换发行版，另一个启动时都判定配置变了并重建全部词典——重建期间没有可用词典，只能输入英文
+- 用户词库是 LevelDB，开启时持排他锁，共用目录时同一时刻只能运行一个
+
+各用各的目录就没有这两条：注册表 `HKCU\Software\Rime\Hare\RimeUserDir` 指向紫毫自己的目录，把方案、词典、`*.custom.yaml` 复制过去即可；用户词库要经 `*.userdb.txt` 快照导入，**不要复制 `*.userdb` 那些 LevelDB 目录**——它们的格式与 librime 版本绑定。这套动作正在做成设置面板里的导入功能，见 [docs/ROADMAP.md](docs/ROADMAP.md) 阶段七。
 
 ## 构建
 
 ```powershell
-pwsh tools\install-deps.ps1     # 预编译 librime、Boost 源码、共享数据
-cmd  /c tools\build-boost.bat   # 编译 Boost 静态库
-cmd  /c tools\build-hare.bat    # 构建，产物在 output\
+pwsh tools\install-deps.ps1       # 预编译 librime、Boost 源码、WebView2 SDK、共享数据
+cmd  /c tools\build-boost.bat     # 编译 Boost 静态库
+cmd  /c tools\build-hare.bat      # 构建，产物在 output\
+cmd  /c tools\build-hare.bat installer   # 另外打 NSIS 安装包
 ```
 
 需要 Visual Studio 的 C++ 桌面开发工作负载，含 ATL 与 MFC。**不要直接调用 `build.bat`**——它依赖包装脚本准备的环境。详情与几个环境陷阱见 [docs/BUILD.md](docs/BUILD.md)。
+
+设置面板用 WebView2：SDK 只取头文件与静态加载器，产物旁边不多一个 DLL；运行时 Windows 11 自带，Windows 10 上缺失时面板会明说并退出。
 
 ## 文档
 

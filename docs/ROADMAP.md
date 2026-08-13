@@ -155,7 +155,11 @@ c_guidDisplayAttributeInput {E17A8C85-D946-468B-8606-07F7C0BD179A}
 
 ```
 官方小狼毫程序   D:\App\Rime\weasel-0.17.4
-Rime 用户目录     D:\App\Rime\UserData      （注册表 HKCU\Software\Rime\Weasel\RimeUserDir 指向此处）
+小狼毫用户目录   D:\App\Rime\UserData        （HKCU\Software\Rime\Weasel\RimeUserDir）
+紫毫程序         D:\App\Rime\hare-0.17.4
+紫毫用户目录     D:\App\Rime\HareUserData    （HKCU\Software\Rime\Hare\RimeUserDir）
 ```
 
-用户目录里跑的是万象拼音 base 全拼方案，配 RIME-LMDG 语法模型，默认英文标点。紫毫与小狼毫共用这个目录。
+两个用户目录里跑的都是万象拼音 base 全拼方案，配 RIME-LMDG 语法模型，默认英文标点。紫毫这一份是从小狼毫那份复制过来的：方案、词典、`*.custom.yaml`、`custom_phrase.txt` 直接复制，`installation.yaml` 与 `build\` 由紫毫自己重新生成（设备标识因此是独立的），用户词库经 `sync\imported-from-weasel\` 下的 `*.userdb.txt` 快照导入而非复制 LevelDB 目录。这就是阶段七要做成功能的那套动作的手工版。
+
+**Rime 只合并已经存在的用户词库**（`synchronizing 0 user dicts`）：新目录里 `*.userdb` 要等第一次真正用它输入时才创建，因此快照要在那之后再同步一次才会并进来。阶段七的导入功能得自己把这一步做掉，而不是留给用户猜。

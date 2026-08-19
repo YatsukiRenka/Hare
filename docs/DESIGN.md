@@ -1,6 +1,6 @@
 # 设计
 
-紫毫（Hare）是 [rime/weasel](https://github.com/rime/weasel) 的分支，在小狼毫的基础上加两样官方不会做的东西：**图片皮肤**与**云同步**。
+紫毫（Hare）是 [rime/weasel](https://github.com/rime/weasel) 的分支，目标是在小狼毫的基础上提供两样官方不会做的东西：**图片皮肤**与**云同步**。当前已具备加密的词库快照云同步及其 WebView2 设置页，图片皮肤尚未实现。
 
 ## 定位
 
@@ -8,13 +8,26 @@
 
 ## 许可
 
-| 组件 | 许可 | 后果 |
+| 范围 | 许可 | 边界 |
 |---|---|---|
-| weasel（本项目基础） | **GPLv3** | 分发二进制必须提供对应源码 |
-| librime | BSD-3-Clause | 保留版权声明即可 |
-| plum | LGPL-3.0 | |
+| 从 weasel 继承的文件 | **GPL-3.0** | 上游许可不因分支而改变，修改时保留原许可声明 |
+| 紫毫编写的文件（包括 `worker/`） | **AGPL-3.0-or-later** | 文件标明本许可 |
+| librime | BSD-3-Clause | 独立依赖，沿用其许可 |
+| `third_party/argon2/` | CC0 / Apache-2.0 | 双授权，沿用其许可 |
 
-紫毫是 weasel 的衍生作品，因此**客户端代码必须 GPLv3 开源**。GPLv3 没有网络条款（它不是 AGPL），所以任何服务端组件不受传染。
+GPL-3.0 第 13 条允许把 GPL-3.0 作品与 AGPL-3.0 作品组合分发，紫毫即为这样的组合作品；组合不改变各部分的许可，weasel 衍生部分仍按 GPL-3.0，紫毫编写部分仍按 AGPL-3.0-or-later。把 `worker/` 部署成网络服务供他人使用时，AGPL 的网络条款要求公开服务端源码。
+
+## 依赖边界
+
+工程依赖包括 Boost、ATL/WTL、预编译的 librime、WebView2 SDK（只取头文件与静态加载器），以及 `third_party/argon2/` 下随仓库保存的 Argon2 参考实现。依赖边界按代码最终进入哪里判定，不按数量判定。
+
+依赖限制要换取的是两件事：不把额外代码装进别人的进程，也不让每次上游合并都处理新的构建接缝；它不是「第三方代码越少越好」。手写而未采用现成库的代码正是本项目解析缺陷的集中处：S3 与 WebDAV 后端的对象名和路径处理，以及 URL 组件处理。因此，容器、归档格式、字符集与实体解码等凡有规范可依的工作，优先采用已有实现；只在平台已经提供原语时自行组合，不重写原语。
+
+1. **链入 `hare.dll`（TSF 文本服务）的代码只用系统原语。** 这个 DLL 会进入用户打字所到的每一个应用进程；多一份依赖就可能让别人的程序崩溃、触发杀毒软件启发式规则，或与宿主已经加载的另一版本相撞。这条边界是绝对的。
+2. **Hare 自有进程可以收纳纯数据或自包含算法。** `HareDeployer.exe`、`HareServer.exe` 中的依赖必须同时满足：源码随仓库放在 `third_party/` 而非 submodule，没有需要分发的运行时 DLL，构建时不需要包管理器，和其他新功能一样只在上游代码里留一个调用点，许可同时兼容 AGPL-3.0-or-later 与 GPL-3.0（具体边界见 `CLAUDE.md` 的「许可」）。`third_party/argon2/` 就是这种形态。新目录与单一调用点本身不产生逐次上游合并冲突；持续改造构建系统或维护 submodule 才会，因此这些条件缺一不可。
+3. **仅用于构建的工具与 `worker/` 不受依赖限制。** Worker 是运行在 Cloudflare、在 MSVC 解决方案之外构建和部署的 JavaScript，它的依赖不增加上游合并成本；构建期工具同理，也可以用清单式包管理器获取依赖。依赖获取由 `tools/install-deps.ps1` 与仓内源码完成，贡献者的门槛来自这套专用准备流程，而不是依赖的数量。
+
+这三层不放宽加密与 TLS 传输的选型：分别固定使用 CNG 与 WinHTTP，由 Windows Update 维护。采用 OpenSSL 或 libcurl，就要为全部已安装用户自行响应 CVE，并向已经安装的每个用户分发运行时 DLL；这是更差的责任边界，不是技术口味。
 
 ## 身份
 
@@ -52,10 +65,10 @@
 |---|---|
 | TSF CLSID、profile GUID、语言栏按钮 GUID、显示属性 GUID | `WeaselTSF/Globals.cpp` |
 | **同一对 GUID 的第二份副本**，以及 `PSZTITLE_HANS` / `PSZTITLE_HANT` 里内嵌的 GUID 字符串 | `WeaselSetup/imesetup.cpp` |
-| 单实例互斥体 `(WEASEL)Furandōru-Sukāretto-` | `WeaselIPCServer/WeaselServerImpl.cpp` |
-| Deployer 互斥体 `WeaselDeployerExclusiveMutex` | `WeaselDeployer/WeaselDeployer.cpp`、`WeaselTSF/WeaselTSF.cpp` |
+| 单实例互斥体 `(HARE)Furandōru-Sukāretto-` | `WeaselIPCServer/WeaselServerImpl.cpp` |
+| Deployer 互斥体 `HareDeployerExclusiveMutex` | `WeaselDeployer/WeaselDeployer.cpp`、`WeaselTSF/WeaselTSF.cpp` |
 | IPC 管道名与 IPC 窗口类名 | `include/WeaselIPC.h` |
-| 服务名 `WeaselInputService` | `WeaselServer/WeaselService.h` |
+| 服务名 `HareInputService` | `WeaselServer/WeaselService.h` |
 | 注册表根键 | `include/WeaselConstants.h`，另有 `WeaselSetup/WeaselSetup.cpp` 的 `KEY` 常量与 `Updates` 子键 |
 | WinSparkle 注册表路径 | `WeaselServer/WeaselServerApp.cpp` |
 | 复制进 `System32` 的 TSF DLL 文件名 | `WeaselSetup/imesetup.cpp` 的 `srcFileName` 与各 `destPath` |
@@ -73,17 +86,17 @@
 
 候选窗是 `WS_EX_LAYERED` 分层窗口，逐像素 alpha，形状与阴影用 GDI+、文字用 Direct2D + DirectWrite 画进内存 DC，最后一次 `UpdateLayeredWindow` 提交。这是输入热路径，每次按键都会重绘。
 
-背景图与立绘都在这条管线里合成，**单窗口一次出图**。立绘允许溢出候选窗边界，窗口矩形因此需要按立绘扩大，`Layout` 的尺寸计算与屏幕边缘避让逻辑要一并处理。之所以不用第二个窗口画立绘，是因为快速跟随光标时两个分层窗口必然出现不同步的拖影。
+图片皮肤尚未进入这条管线：`DoPaint()` 当前只绘制纯色背景、文字与状态图标，`UIStyle` 和 `Layout` 也没有背景图、九宫格边距或立绘字段。设计要求背景图与立绘在同一管线中合成，**单窗口一次出图**。立绘允许溢出候选窗边界，窗口矩形因此需要按立绘扩大，`Layout` 的尺寸计算与屏幕边缘避让逻辑要一并处理。之所以不用第二个窗口画立绘，是因为快速跟随光标时两个分层窗口必然出现不同步的拖影。
 
-绘制路径分三层组织：**背景源 → 帧 → 合成**。第一版只有静态图，动图与过渡动画通过接入定时器实现，不改结构。
+设计中的绘制路径分三层组织：**背景源 → 帧 → 合成**。首个落地版本只支持静态图，动图与过渡动画通过接入定时器实现，不改结构；当前绘制代码尚无这三层抽象。
 
 ### 皮肤格式
 
-一个皮肤是 `skins/<name>/` 目录，内含图片与 `skin.yaml`，声明九宫格边距、立绘位置与一套配色。
+设计中的皮肤是 `skins/<name>/` 目录，内含图片与 `skin.yaml`，声明九宫格边距、立绘位置与一套配色。当前没有皮肤目录的发现与加载、`skin.yaml` 解析或图片解码路径。
 
-配色由皮肤自带，选中即可用，同时允许 `weasel.custom.yaml` 覆盖——Rime 的配置合并机制天然支持。皮肤可以声明可选的暗色变体，未声明则深色模式下沿用亮色那套。
+皮肤配色的设计是选中即可使用，同时允许 `weasel.custom.yaml` 覆盖——Rime 的配置合并机制天然支持。皮肤可以声明可选的暗色变体，未声明则深色模式下沿用亮色那套。
 
-搜狗 `.ssf` 皮肤的导入**只解包抽取图片**。`.ssf` 本身是 ZIP，`skin.ini` 是 UTF-16LE 的 INI。不解析它的布局参数：立绘定位是形如 `custom0_align = 0,0,0,0,1,0,0,2,6,0` 的十个无文档数字，且不同皮肤版本语义不一致；位置与边距在 GUI 里拖拽调整，绕开逆向。
+搜狗 `.ssf` 皮肤导入器尚未实现；设计上**只解包抽取图片**。`.ssf` 本身是 ZIP，`skin.ini` 是 UTF-16LE 的 INI。不解析它的布局参数：立绘定位是形如 `custom0_align = 0,0,0,0,1,0,0,2,6,0` 的十个无文档数字，且不同皮肤版本语义不一致；位置与边距在 GUI 里拖拽调整，绕开逆向。
 
 ## 云同步
 
@@ -110,11 +123,15 @@ Rime 自带的同步机制是：把用户词库导出成 `.userdb.txt` 快照写
 | WebDAV | 服务地址、用户名、密码 |
 | 本地目录 | 一个目录路径 |
 
-Worker 那条路配合 Cloudflare 的 Deploy 按钮，可以自动创建并绑定 R2 bucket，用户不必接触 account ID 与密钥；代价是源仓库必须公开，且用户需要 GitHub 或 GitLab 账号。
+Worker 后端当前只接收已经部署好的 Worker URL 与自设 token，设置页没有一键部署入口。设计是在设置页接入 Cloudflare 的 Deploy 按钮，自动创建并绑定 R2 bucket，让用户不必接触 account ID 与密钥；代价是源仓库必须公开，且用户需要 GitHub 或 GitLab 账号。
+
+本地目录后端把用户选定的目录视为受信存储位置，不是针对同账户恶意进程的沙箱边界；同账户进程若能在路径校验与文件打开之间替换 junction，本就同时拥有 Rime 用户目录和注册表凭证的读写权限。真正需要跨信任边界时使用只暴露对象接口的 S3、WebDAV 或 Worker 后端。
 
 R2 免费额度为 10 GB 存储、每月 100 万次 Class A、1000 万次 Class B，出网流量免费。按单设备每小时同步一次估算，免费额度足以覆盖数千设备月。
 
 ### 同步范围
+
+以下是配置与皮肤纳入同步后的设计边界。当前实现只搬运 `*.userdb.txt`；配置与皮肤同步、拉取 YAML 的语法校验、覆盖前的时间戳备份以及校验通过后的自动部署尚未落地，实施进度只在 `docs/ROADMAP.md` 阶段四维护。
 
 | 内容 | 策略 |
 |---|---|
@@ -136,11 +153,11 @@ R2 免费额度为 10 GB 存储、每月 100 万次 Class A、1000 万次 Class 
 
 - **数据密钥（DEK）**：32 字节随机，所有设备共用
 - **密钥加密密钥（KEK）**：主密码经 Argon2id（m=64MB, t=3, p=1）派生
-- 被 KEK 包装后的 DEK 存在云端；新设备输入主密码即可解开，之后用 DPAPI 缓存在本地，开机自动同步不再需要密码
-- 换密码只需重新包装 DEK，不必重新加密全部历史数据
+- 被 KEK 包装后的 DEK 存在云端；首次建立使用后端的原子 create-if-absent，已有对象永不覆盖，并发设备读取同一个远端胜者；新设备输入主密码即可解开，之后用 DPAPI 缓存在本地，开机自动同步不再需要密码
+- 主密码轮换的设计只重新包装 DEK，不必重新加密全部历史数据；当前设置页只提交一个密码，存储已有包装密钥时 `SetUpDataKey()` 只用它尝试解包，没有旧密码解包、再用新密码包装并写回的路径
 - 内容加密使用 CNG 的 AES-GCM
 
-主密码要求最短 10 位，不强制字符类型组合，另用 zxcvbn 评分拦截可预测的弱密码。强制组合规则会把用户推向 `Password1!` 这类可预测模式，实测有效熵反而更低，NIST SP 800-63B 现行版亦明确反对。
+主密码的设计要求是最短 10 位，不强制字符类型组合，另用 zxcvbn 风格的评分拦截可预测弱密码。当前实现只检查最短 10 位，可预测弱密码拦截尚未落地，实施进度只在 `docs/ROADMAP.md` 阶段五维护。强制组合规则会把用户推向 `Password1!` 这类可预测模式，实测有效熵反而更低，NIST SP 800-63B 现行版亦明确反对。
 
 **R2 凭证与 API token 不能用作密钥材料**：凭证需要定期轮换而密钥必须恒定，一次轮换就会让所有历史密文无法解开；且服务方持有凭证副本，用它派生密钥等于把钥匙交给了想要防范的对象。
 
@@ -148,11 +165,11 @@ R2 免费额度为 10 GB 存储、每月 100 万次 Class A、1000 万次 Class 
 
 ## 界面
 
-设置面板嵌在 `HareDeployer` 里，用 WebView2 实现，是紫毫全部图形配置的入口：同步配置（选后端、填凭证、同步间隔、启动时同步）、皮肤选择（缩略图墙、拖拽导入、九宫格边距与立绘位置编辑）、插件与开关、方案与部署、通用设置。同步范围的多选留到同步范围真的不止词库时再加。
+设置面板嵌在 `HareDeployer` 里，用 WebView2 实现，设计为紫毫全部图形配置的入口：同步配置（选后端、填凭证、同步间隔、启动时同步）、皮肤选择（缩略图墙、拖拽导入、九宫格边距与立绘位置编辑）、插件与开关、方案与部署、通用设置。当前 WebView2 页面只提供同步配置、连接测试、密钥建立、手动同步与同步计划；方案选择与配色方案由既有 Win32 对话框提供，重新部署由托盘入口提供，皮肤、插件与开关、方案与部署、通用配置页面均未接入。同步范围的多选留到同步范围真的不止词库时再加。
 
 ### 通用配置：描述驱动，不做树编辑器
 
-Rime 的配置没有固定结构：任意 YAML 树，加 patch 机制，加每个方案自定义的键。想把所有配置项做成表单，等于给一门无模式的配置语言做编辑器；退而求其次做通用树编辑器，则是把 YAML 的结构原样甩给用户——人要改的是「简繁切换」这种意图，不是 `switches/@3/reset` 这条路径。
+通用配置页尚未实现；以下是它的设计。Rime 的配置没有固定结构：任意 YAML 树，加 patch 机制，加每个方案自定义的键。想把所有配置项做成表单，等于给一门无模式的配置语言做编辑器；退而求其次做通用树编辑器，则是把 YAML 的结构原样甩给用户——人要改的是「简繁切换」这种意图，不是 `switches/@3/reset` 这条路径。
 
 因此面板按**描述**渲染，而不是按结构：
 
@@ -163,9 +180,9 @@ Rime 的配置没有固定结构：任意 YAML 树，加 patch 机制，加每�
 - 写入一律 patch 进 `*.custom.yaml`，不动原文件，可回滚，也不与方案升级打架
 - 外观类设置由**真实的渲染管线**出图预览，与皮肤面板共用同一套能力
 
-两件外部工具做不到、只能由紫毫自己做的事：改完配置后用紫毫自己的部署器、对着紫毫自己的用户目录重新部署；以及在同一个窗口里与同步、皮肤设置并列。第三方 Rime 图形配置工具仍然有用，面板检测到就提供入口，并明确写出它编辑的是哪个用户目录。
+设计中有两件外部工具做不到、只能由紫毫自己做的事：改完配置后用紫毫自己的部署器、对着紫毫自己的用户目录重新部署；以及在同一个窗口里与同步、皮肤设置并列。第三方 Rime 图形配置工具仍然有用，因此设计要求面板检测到就提供入口，并明确写出它编辑的是哪个用户目录；当前 WebView2 页面尚无这项检测与入口。
 
-候选窗本体**不受影响**，继续使用现有的 GDI+ / Direct2D 分层窗口管线。WebView2 只出现在设置面板：`HareDeployer` 是一次性进程，开窗那几十秒的启动开销与内存占用碰不到输入延迟；而候选窗是每次按键都要重绘的热路径，绝不能引入。皮肤面板的实时预览同样由真实管线出图后送进页面，而不是在 HTML 里重画一个近似的候选窗——否则调出来的边距与立绘位置在真实渲染下对不上。
+候选窗本体当前**不受影响**，使用现有的 GDI+ / Direct2D 分层窗口管线。WebView2 只出现在设置面板：`HareDeployer` 是一次性进程，开窗那几十秒的启动开销与内存占用碰不到输入延迟；而候选窗是每次按键都要重绘的热路径，绝不能引入。皮肤面板尚未实现；其实时预览的设计要求是真实管线出图后送进页面，而不是在 HTML 里重画一个近似的候选窗——否则调出来的边距与立绘位置在真实渲染下对不上。
 
 页面与宿主之间传的是一条扁平记录（单元分隔符隔开的 `key=value`，值百分号编码），不引入 JSON 库。**凭证只出宿主不入页面**：页面只知道某项「已保存」，留空即不改动。**面向用户的文案全在页面里**，宿主只回报状态码，因此 C++ 源码里没有非 ASCII 字面量，也不必在几份 `.rc` 语言块之间同步措辞。
 
@@ -173,11 +190,11 @@ Rime 的配置没有固定结构：任意 YAML 树，加 patch 机制，加每�
 
 ## 自动更新
 
-沿用 WinSparkle，feed 指向紫毫自己的地址而非官方。四条 `APPCAST` 资源在 `WeaselServer/WeaselServer.rc`：`FEEDURL`、`MANUALUPDATEFEEDURL`、`TESTINGFEEDURL`、`TESTINGMANUALUPDATEFEEDURL`，分正式与测试两个通道。WinSparkle 的注册表路径为 `Software\Rime\Hare\Updates`。
+设计沿用 WinSparkle，并为紫毫提供正式与测试两个 feed。当前 `HareServer` 在 `win_sparkle_init()` 前调用 `win_sparkle_set_appcast_url()` 显式设置紫毫正式 feed；显式 URL 的优先级高于资源，因此 `WeaselServer/WeaselServer.rc` 中仍指向上游的四条 `APPCAST` 资源不会成为运行时 feed。手动检查路径会读取 `Software\Rime\Hare` 下的 `UpdateChannel` 并选择正式或测试 URL，但它在初始化后再次调用配置接口，而仓内 WinSparkle 接口要求配置函数只在首次初始化前调用，测试通道尚无符合该接口约束的生效路径。WinSparkle 的注册表路径为 `Software\Rime\Hare\Updates`。
 
-更新包用 **EdDSA 签名**：自己生成密钥对，公钥编进可执行文件，私钥存 GitHub Secrets 由 Actions 签名，零成本，防止 feed 被劫持后推送恶意更新。这与 Authenticode 代码签名证书是两回事——后者用于消除 SmartScreen 警告，需要年费，不在本项目范围内。
+更新包的设计使用 **EdDSA 签名**：自己生成密钥对，公钥编进可执行文件，私钥存 GitHub Secrets 由 Actions 签名，零成本，防止 feed 被劫持后推送恶意更新。当前捆绑的 WinSparkle 接口只提供 DSA 公钥验证，仓库中没有签名公钥、EdDSA 验证接入或 Actions 签名步骤，因此这条签名链尚未实现。这与 Authenticode 代码签名证书是两回事——后者用于消除 SmartScreen 警告，需要年费，不在本项目范围内。
 
-`update/` 目录下的 `appcast.xml`、`testing-appcast.xml`、`bump-version.ps1` 是上游现成的发布工具链，改 URL 即可复用。
+`update/` 目录下的 `appcast.xml`、`testing-appcast.xml`、`bump-version.ps1` 是可复用的上游发布工具链骨架；当前两个 appcast 仍指向小狼毫，脚本只维护版本而不签名。设计要求在紫毫 feed、产物名与签名链就绪后复用这套结构。
 
 ## 明确不做
 

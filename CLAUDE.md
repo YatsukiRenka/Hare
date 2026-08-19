@@ -16,7 +16,7 @@
 
 **新功能写进新文件，在上游文件里只留一个调用点。** 这是这个分支能长期跟上游走的唯一办法。改动落点的选择要参考 `docs/ROADMAP.md` 里的上游改动频率表。
 
-**能用系统自带的就不引入第三方库。** HTTP 用 WinHTTP，加解密用 CNG，界面用 ATL/WTL 与 WebView2，都不需要额外分发。已有的依赖只有 Boost、ATL/WTL、预编译的 librime、WebView2 SDK（只取头文件与静态加载器）与 Argon2 参考实现。加一个依赖之前先问它抵不抵得上每次上游合并多带的那份负担。
+**依赖按代码落点分三级。** 链入 `hare.dll` 的代码只用系统原语；`HareDeployer.exe`、`HareServer.exe` 只可引入 `third_party/` 下、无需运行时 DLL 与构建期包管理器、仅有一个调用点、许可同时兼容 AGPL-3.0-or-later 与 GPL-3.0 的纯数据或自包含算法；仅用于构建和 `worker/` 的依赖不限。加密与 TLS 传输固定使用 CNG、WinHTTP。边界与取舍见 `docs/DESIGN.md` 的「依赖边界」。
 
 **用 merge 而非 rebase 同步上游**，保留改动历史。
 
@@ -24,9 +24,10 @@
 
 ```powershell
 cmd /c tools\build-hare.bat
+cmd /c tools\test-cloud-sync.bat
 ```
 
-**不要直接调用 `build.bat`。** 它需要包装脚本准备的环境，尤其是清除 `NoDefaultCurrentDirectoryInExePath`——这个变量会让 cmd 拒绝从当前目录解析批处理，导致 `call env.bat` 失败，报错信息极具误导性。首次构建的准备步骤见 `docs/BUILD.md`。
+**不要直接调用 `build.bat`。** 它需要包装脚本准备的环境，尤其是清除 `NoDefaultCurrentDirectoryInExePath`——这个变量会让 cmd 拒绝从当前目录解析批处理，导致 `call env.bat` 失败，报错信息极具误导性。`test-cloud-sync.bat` 不调用上游构建脚本，也不删除构建日志。首次构建的准备步骤见 `docs/BUILD.md`。
 
 ## 与官方小狼毫的关系
 

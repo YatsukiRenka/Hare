@@ -19,11 +19,20 @@ cmd /c tools\build-hare.bat installer    # 另外打 NSIS 安装包
 
 **不要直接调用 `build.bat`**，它需要包装脚本准备的环境，见下。
 
+## 云同步核心测试
+
+```powershell
+cmd /c tools\test-cloud-sync.bat
+cmd /c tools\test-cloud-sync.bat full   # 另加完整 x64、Win32 Release solution build
+```
+
+默认入口分别构建并运行 x64、Win32 的 `TestCloudSyncCore`，再定向编译两种架构的 Release `HareDeployer`；`full` 另外构建完整的双架构 Release solution。测试覆盖快照加密封装与名称认证、远端快照路径/重复冲突、S3 前缀规范化与返回键边界、本地条件创建，以及批量文件提交失败时的回滚和临时/备份文件清理。脚本直接调用 MSBuild，不调用会清理日志的上游 `build.bat`。
+
 ## 工具链
 
 | 组件 | 版本 / 位置 | 说明 |
 |---|---|---|
-| Visual Studio | 2026 Enterprise 18.7 | 包装脚本用 `vswhere` 自动定位 |
+| Visual Studio | 2026 Enterprise 18.9 | 包装脚本用 `vswhere` 自动定位 |
 | 平台工具集 | **v145**（MSVC 14.51） | 见下方「工具集命名」 |
 | Windows SDK | 10.0.26100.0 | |
 | Boost | 1.91.0，静态，`vc145` 标签 | 只编 serialization 与 thread |
@@ -61,6 +70,10 @@ VS 组件要求：「使用 C++ 的桌面开发」工作负载 + **C++ ATL** + *
 `vswhere` 默认只返回「完整可用」的实例，Visual Studio 2026 被标记为 prerelease，因此**必须加 `-all -prerelease`** 才能查到。漏掉这两个参数会挑中不带 ATL 的 Build Tools 实例，症状是 `atlbase.h` 找不到。
 
 `tools\` 下的脚本不查组件 ID（VS2026 不上报 `VC.ATL`），而是直接检查 `VC\Tools\MSVC\*\atlmfc\include\atlbase.h` 是否存在来选实例。
+
+### MSBuild 文件跟踪
+
+Visual Studio 2026 18.9 的 `Tracker.exe` 在这台机器上会在启动编译器后退出，留下唯一线程处于 `Suspended` 的 `CL.exe`，MSBuild 随后永久等待。`tools\test-cloud-sync.bat` 显式设置 `TrackFileAccess=false` 绕过该跟踪器；这只关闭增量构建的文件访问日志，不改变编译、链接或测试内容。
 
 ### 批处理文件必须是纯 ASCII
 

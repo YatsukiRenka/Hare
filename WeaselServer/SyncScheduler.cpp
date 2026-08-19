@@ -48,7 +48,20 @@ void SyncScheduler::Start(const std::filesystem::path& deployer) {
   stop_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   if (!stop_)
     return;
-  thread_ = std::thread(&SyncScheduler::Loop, this, deployer);
+  try {
+    thread_ = std::thread([this, deployer]() noexcept {
+      try {
+        Loop(deployer);
+      } catch (...) {
+        // A failed scheduling loop must not terminate the resident server.
+      }
+    });
+  } catch (...) {
+    // Event creation already treats scheduling as best-effort; leave the same
+    // stopped state when the worker itself cannot be created.
+    CloseHandle(stop_);
+    stop_ = nullptr;
+  }
 }
 
 void SyncScheduler::Stop() {
@@ -66,7 +79,7 @@ void SyncScheduler::Loop(std::filesystem::path deployer) {
   if (WaitForSingleObject(stop_, kStartupDelayMs) != WAIT_TIMEOUT)
     return;
 
-  if (SyncOnStartup() && CloudSyncConfigured())
+  if (SyncOnStartup() && CloudSyncReady())
     RunSync(deployer);
 
   for (;;) {
@@ -74,7 +87,7 @@ void SyncScheduler::Loop(std::filesystem::path deployer) {
     const DWORD wait = minutes == 0 ? kIdleRecheckMs : minutes * 60 * 1000;
     if (WaitForSingleObject(stop_, wait) != WAIT_TIMEOUT)
       return;
-    if (minutes != 0 && CloudSyncConfigured())
+    if (minutes != 0 && CloudSyncReady())
       RunSync(deployer);
   }
 }

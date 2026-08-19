@@ -278,6 +278,8 @@ const TEXT = {
   key_unreachable: '存储不可达，未做任何改动',
   sync_ok: '同步完成',
   sync_cloud_failed: '本机词库已合并，但云端这一轮没成：检查密钥与连接',
+  sync_unsupported_snapshot_format: '存储中有此版本不读取的旧格式快照。必须删除这些词库快照（不要删除数据密钥）；各设备会在下次同步时重新上传。主密码和已存的数据密钥仍然有效，无需重新建立。',
+  sync_local_recovery_required: '本地文件事务未能完整收尾。请停止同步并保留同步目录里的 .hare.bak.* 文件，用它检查或恢复原内容。',
   sync_failed: '同步失败'
 };
 

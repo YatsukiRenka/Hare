@@ -217,8 +217,8 @@ inline LONG RegGetStringValue(HKEY key,
 
 inline LANGID get_language_id() {
   std::wstring lang{};
-  if (RegGetStringValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare",
-                        L"Language", lang) == ERROR_SUCCESS) {
+  if (RegGetStringValue(HKEY_CURRENT_USER, L"Software\\Rime\\Hare", L"Language",
+                        lang) == ERROR_SUCCESS) {
     if (lang == L"chs")
       return MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
     else if (lang == L"cht")

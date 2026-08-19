@@ -3,7 +3,7 @@
   "name": "hare-sync",
   "main": "src/index.js",
   "compatibility_date": "2026-01-01",
-  // Deploying from the dashboard creates and binds this bucket automatically.
+  // The bucket must already exist for manual Wrangler deployment.
   "r2_buckets": [
     {
       "binding": "SYNC_BUCKET",

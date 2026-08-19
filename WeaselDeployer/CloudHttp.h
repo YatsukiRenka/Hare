@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -13,8 +14,22 @@
 
 namespace hare {
 
+// Encrypted snapshots and every HTTP request/response body share this bound.
+// Keeping one wire-size contract prevents uploading an object that a later GET
+// would refuse to read.
+constexpr size_t kMaxCloudObjectBytes = 64u * 1024u * 1024u;
+
+enum class HttpFailure {
+  kNone,
+  kTransport,
+  kPayloadTooLarge,
+};
+
 struct HttpResponse {
+  // Zero means no complete response. `failure` preserves whether that was a
+  // transport failure or the local payload-size contract rejecting the body.
   unsigned status = 0;
+  HttpFailure failure = HttpFailure::kTransport;
   std::string body;
 
   bool ok() const { return status >= 200 && status < 300; }
@@ -25,6 +40,10 @@ HttpResponse HttpRequest(const std::wstring& method,
                          const std::wstring& url,
                          const std::map<std::wstring, std::wstring>& headers,
                          const std::string& body);
+
+// Preserves the category even when a backend reduces HttpResponse to its
+// existing bool/FetchResult interface. Like HttpRequest, this is per-thread.
+HttpFailure LastHttpFailure();
 
 std::vector<uint8_t> Sha256(const std::string& data);
 std::vector<uint8_t> HmacSha256(const std::vector<uint8_t>& key,

@@ -13,9 +13,10 @@
 //
 // Endpoints, all requiring `Authorization: Bearer <SYNC_TOKEN>`:
 //
-//   GET  /list        JSON array of object names
-//   GET  /o/<name>    object bytes
-//   PUT  /o/<name>    store object bytes
+//   GET  /capabilities protocol/capability marker required before key creation
+//   GET  /list         JSON array of object names
+//   GET  /o/<name>     object bytes
+//   PUT  /o/<name>     store object bytes; If-None-Match: * creates only once
 //
 // Object names look like "<installation_id>/<file>.userdb.txt", plus the single
 // "keys/dek.bin" holding the wrapped data key.
@@ -41,8 +42,21 @@ function tokenMatches(provided, expected) {
 
 // Keeps a request from reaching outside the prefix, whatever the client sends.
 function objectKey(name) {
-  const decoded = decodeURIComponent(name);
-  if (!decoded || decoded.includes('..') || decoded.startsWith('/')) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(name);
+  } catch {
+    return null;
+  }
+
+  const components = decoded.split('/');
+  if (components.length !== 2 || components.some((component) =>
+    !component || component === '.' || component === '..' ||
+    new TextEncoder().encode(component).length > 255 ||
+    /[\/\\:*?"<>|\u0000-\u001f]/u.test(component) ||
+    component.endsWith(' ') || component.endsWith('.') ||
+    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu.test(
+      component.split('.', 1)[0]))) {
     return null;
   }
   return PREFIX + decoded;
@@ -51,16 +65,22 @@ function objectKey(name) {
 export default {
   async fetch(request, env) {
     if (!env.SYNC_TOKEN) {
-      return new Response('SYNC_TOKEN is not configured', { status: 500 });
+      console.error('SYNC_TOKEN is not configured');
     }
 
     const header = request.headers.get('Authorization') || '';
-    if (!header.startsWith('Bearer ') ||
+    if (!env.SYNC_TOKEN || !header.startsWith('Bearer ') ||
         !tokenMatches(header.slice(7), env.SYNC_TOKEN)) {
       return unauthorized();
     }
 
     const url = new URL(request.url);
+
+    if (request.method === 'GET' && url.pathname === '/capabilities') {
+      return new Response('hare-worker/1 conditional-put', {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
 
     if (request.method === 'GET' && url.pathname === '/list') {
       const names = [];
@@ -92,6 +112,19 @@ export default {
       }
 
       if (request.method === 'PUT') {
+        const ifNoneMatch = request.headers.get('If-None-Match');
+        if (ifNoneMatch && ifNoneMatch !== '*') {
+          return new Response('unsupported condition', { status: 400 });
+        }
+        if (ifNoneMatch === '*') {
+          const created = await env.SYNC_BUCKET.put(key, request.body, {
+            onlyIf: new Headers({ 'If-None-Match': '*' }),
+          });
+          if (created === null) {
+            return new Response('already exists', { status: 412 });
+          }
+          return new Response('created', { status: 201 });
+        }
         await env.SYNC_BUCKET.put(key, request.body);
         return new Response('ok');
       }

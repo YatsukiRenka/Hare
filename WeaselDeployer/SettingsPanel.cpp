@@ -27,6 +27,10 @@
 
 #pragma comment(lib, "WebView2LoaderStatic.lib")
 
+#ifndef IDS_STR_SETTINGS_PANEL_FAILED
+#define IDS_STR_SETTINGS_PANEL_FAILED 160
+#endif
+
 namespace hare {
 
 namespace {
@@ -119,9 +123,9 @@ std::wstring Decode(const std::wstring& message, Fields* fields) {
   const std::wstring verb = message.substr(0, begin);
   while (begin != std::wstring::npos) {
     const size_t end = message.find(kSeparator, begin + 1);
-    const std::wstring pair = message.substr(
-        begin + 1, end == std::wstring::npos ? std::wstring::npos
-                                             : end - begin - 1);
+    const std::wstring pair =
+        message.substr(begin + 1, end == std::wstring::npos ? std::wstring::npos
+                                                            : end - begin - 1);
     const size_t split = pair.find(L'=');
     if (split != std::wstring::npos && split > 0) {
       (*fields)[pair.substr(0, split)] =
@@ -258,20 +262,22 @@ std::wstring LoadPage() {
 
 class SettingsPanel : public CWindowImpl<SettingsPanel> {
  public:
-  DECLARE_WND_CLASS_EX(L"HareCloudSyncSettings", CS_HREDRAW | CS_VREDRAW,
+  DECLARE_WND_CLASS_EX(L"HareCloudSyncSettings",
+                       CS_HREDRAW | CS_VREDRAW,
                        COLOR_WINDOW)
 
   explicit SettingsPanel(const std::function<int()>& run_sync)
       : run_sync_(run_sync) {}
 
   BEGIN_MSG_MAP(SettingsPanel)
-    MESSAGE_HANDLER(WM_SIZE, OnSize)
-    MESSAGE_HANDLER(WM_CLOSE, OnClose)
-    MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
-    MESSAGE_HANDLER(kTaskDone, OnTaskDone)
+  MESSAGE_HANDLER(WM_SIZE, OnSize)
+  MESSAGE_HANDLER(WM_CLOSE, OnClose)
+  MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
+  MESSAGE_HANDLER(kTaskDone, OnTaskDone)
   END_MSG_MAP()
 
   bool Open();
+  bool InitializationFailed() const { return initialization_failed_; }
 
  private:
   LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL&);
@@ -281,6 +287,7 @@ class SettingsPanel : public CWindowImpl<SettingsPanel> {
 
   void CreateWebView();
   void AttachWebView(ICoreWebView2Controller* controller);
+  void FailInitialization();
   void FitWebView();
 
   void OnPageMessage(const std::wstring& message);
@@ -288,13 +295,16 @@ class SettingsPanel : public CWindowImpl<SettingsPanel> {
   void SendStatus(const wchar_t* level,
                   const wchar_t* code,
                   bool clear_password);
-  void RunAsync(const wchar_t* busy_code, std::function<TaskResult()> work);
+  void RunAsync(const wchar_t* busy_code,
+                TaskResult failure,
+                std::function<TaskResult()> work);
 
   ComPtr<ICoreWebView2Controller> controller_;
   ComPtr<ICoreWebView2> webview_;
   std::function<int()> run_sync_;
   bool busy_ = false;
   bool close_pending_ = false;
+  bool initialization_failed_ = false;
 };
 
 // The page lays itself out in CSS pixels and WebView2 scales those by the
@@ -362,7 +372,7 @@ void SettingsPanel::CreateWebView() {
           [this](HRESULT result,
                  ICoreWebView2Environment* environment) -> HRESULT {
             if (FAILED(result) || !environment) {
-              PostMessageW(WM_CLOSE);
+              FailInitialization();
               return result;
             }
             return environment->CreateCoreWebView2Controller(
@@ -372,7 +382,7 @@ void SettingsPanel::CreateWebView() {
                     [this](HRESULT result,
                            ICoreWebView2Controller* controller) -> HRESULT {
                       if (FAILED(result) || !controller) {
-                        PostMessageW(WM_CLOSE);
+                        FailInitialization();
                         return result;
                       }
                       AttachWebView(controller);
@@ -382,14 +392,14 @@ void SettingsPanel::CreateWebView() {
           })
           .Get());
   if (FAILED(hr))
-    PostMessageW(WM_CLOSE);
+    FailInitialization();
 }
 
 void SettingsPanel::AttachWebView(ICoreWebView2Controller* controller) {
   controller_ = controller;
   controller_->get_CoreWebView2(&webview_);
   if (!webview_) {
-    PostMessageW(WM_CLOSE);
+    FailInitialization();
     return;
   }
 
@@ -438,10 +448,15 @@ void SettingsPanel::AttachWebView(ICoreWebView2Controller* controller) {
 
   const std::wstring page = LoadPage();
   if (page.empty()) {
-    PostMessageW(WM_CLOSE);
+    FailInitialization();
     return;
   }
   webview_->NavigateToString(page.c_str());
+}
+
+void SettingsPanel::FailInitialization() {
+  initialization_failed_ = true;
+  PostMessageW(WM_CLOSE);
 }
 
 void SettingsPanel::FitWebView() {
@@ -494,6 +509,7 @@ LRESULT SettingsPanel::OnTaskDone(UINT, WPARAM, LPARAM lParam, BOOL&) {
 }
 
 void SettingsPanel::RunAsync(const wchar_t* busy_code,
+                             TaskResult failure,
                              std::function<TaskResult()> work) {
   if (busy_)
     return;
@@ -501,11 +517,29 @@ void SettingsPanel::RunAsync(const wchar_t* busy_code,
   SendStatus(L"busy", busy_code, false);
 
   const HWND window = m_hWnd;
-  std::thread([window, work = std::move(work)]() {
-    auto* result = new TaskResult(work());
-    if (!::PostMessageW(window, kTaskDone, 0, reinterpret_cast<LPARAM>(result)))
-      delete result;
-  }).detach();
+  try {
+    auto result = std::make_unique<TaskResult>(failure);
+    std::thread([window, result = std::move(result),
+                 work = std::move(work)]() mutable noexcept {
+      try {
+        *result = work();
+      } catch (...) {
+        // `result` already holds this operation's existing failure outcome.
+      }
+      TaskResult* posted = result.release();
+      if (!::PostMessageW(window, kTaskDone, 0,
+                          reinterpret_cast<LPARAM>(posted))) {
+        delete posted;
+      }
+    }).detach();
+  } catch (...) {
+    // Construction failed on the UI thread; report the same prepared outcome
+    // directly because no worker exists to post kTaskDone.
+    busy_ = false;
+    if (failure.refresh)
+      SendSettings();
+    SendStatus(L"error", failure.code, failure.clear_password);
+  }
 }
 
 void SettingsPanel::SendSettings() {
@@ -563,9 +597,10 @@ void SettingsPanel::OnPageMessage(const std::wstring& message) {
 
   if (verb == L"save") {
     const SyncConfig config = ConfigFromFields(fields);
-    const bool saved = config.Save() &&
-                       SaveSyncSchedule(IntervalFromFields(fields),
-                                        Field(fields, L"syncOnStartup") == L"1");
+    const bool saved =
+        config.Save() &&
+        SaveSyncSchedule(IntervalFromFields(fields),
+                         Field(fields, L"syncOnStartup") == L"1");
     SendSettings();
     SendStatus(saved ? L"ok" : L"error", saved ? L"saved" : L"save_failed",
                false);
@@ -575,7 +610,9 @@ void SettingsPanel::OnPageMessage(const std::wstring& message) {
   if (verb == L"test") {
     SyncConfig config = ConfigFromFields(fields);
     MergeStoredSecrets(&config);
-    RunAsync(L"busy_test", [config]() {
+    TaskResult failure;
+    failure.code = L"test_unreachable";
+    RunAsync(L"busy_test", failure, [config]() {
       TaskResult result;
       switch (TestBackend(config)) {
         case BackendTestResult::kOk:
@@ -601,7 +638,8 @@ void SettingsPanel::OnPageMessage(const std::wstring& message) {
     const bool on_startup = Field(fields, L"syncOnStartup") == L"1";
     std::string password = wtou8(Field(fields, L"password"));
     // The decoded message holds the password too; it is wiped here so only the
-    // copy handed to the worker survives, and that one is wiped when it is done.
+    // copy handed to the worker survives, and that one is wiped when it is
+    // done.
     if (auto entry = fields.find(L"password"); entry != fields.end()) {
       SecureZeroMemory(entry->second.data(),
                        entry->second.size() * sizeof(wchar_t));
@@ -610,26 +648,39 @@ void SettingsPanel::OnPageMessage(const std::wstring& message) {
     // Saving first is not a convenience: the data key belongs to whichever
     // storage is configured, so deriving one against settings that have not
     // been written would attach it to the previous backend.
-    RunAsync(L"busy_key", [config, interval, on_startup,
-                           password = std::move(password)]() mutable {
-      TaskResult result;
-      result.refresh = true;
-      result.clear_password = true;
-      if (!config.Save() || !SaveSyncSchedule(interval, on_startup)) {
-        result.code = L"save_failed";
-      } else {
-        const KeySetupResult setup = SetUpDataKey(password);
-        result.ok = setup == KeySetupResult::kOk;
-        result.code = KeySetupCode(setup);
-      }
-      SecureZeroMemory(password.data(), password.size());
-      return result;
-    });
+    TaskResult failure;
+    failure.code = L"key_unreachable";
+    failure.refresh = true;
+    failure.clear_password = true;
+    RunAsync(L"busy_key", failure,
+             [config, interval, on_startup,
+              password = std::move(password)]() mutable {
+               struct PasswordWiper {
+                 std::string* value;
+                 ~PasswordWiper() {
+                   SecureZeroMemory(value->data(), value->size());
+                 }
+               } wipe{&password};
+               TaskResult result;
+               result.refresh = true;
+               result.clear_password = true;
+               if (!config.Save() || !SaveSyncSchedule(interval, on_startup)) {
+                 result.code = L"save_failed";
+               } else {
+                 const KeySetupResult setup = SetUpDataKey(password);
+                 result.ok = setup == KeySetupResult::kOk;
+                 result.code = KeySetupCode(setup);
+               }
+               return result;
+             });
     return;
   }
 
   if (verb == L"sync") {
-    RunAsync(L"busy_sync", [this]() {
+    TaskResult failure;
+    failure.code = L"sync_failed";
+    failure.refresh = true;
+    RunAsync(L"busy_sync", failure, [this]() {
       TaskResult result;
       result.refresh = true;
       const int outcome = run_sync_ ? run_sync_() : 1;
@@ -637,9 +688,23 @@ void SettingsPanel::OnPageMessage(const std::wstring& message) {
       // A cloud round that failed while the local merge succeeded is worth
       // saying out loud: the dictionaries are fine, the other machines are not
       // going to see this round.
-      result.code = outcome == 0             ? L"sync_ok"
-                    : outcome == kCloudSyncFailed ? L"sync_cloud_failed"
-                                                  : L"sync_failed";
+      if (outcome == 0) {
+        result.code = L"sync_ok";
+      } else if (outcome == kCloudSyncFailed) {
+        switch (LastCloudSyncError()) {
+          case CloudSyncError::kUnsupportedSnapshotFormat:
+            result.code = L"sync_unsupported_snapshot_format";
+            break;
+          case CloudSyncError::kLocalRecoveryRequired:
+            result.code = L"sync_local_recovery_required";
+            break;
+          default:
+            result.code = L"sync_cloud_failed";
+            break;
+        }
+      } else {
+        result.code = L"sync_failed";
+      }
       return result;
     });
     return;
@@ -665,6 +730,11 @@ int ShowSettingsPanel(const std::function<int()>& run_sync) {
   while (GetMessageW(&message, nullptr, 0, 0) > 0) {
     TranslateMessage(&message);
     DispatchMessageW(&message);
+  }
+  if (panel.InitializationFailed()) {
+    MSG_BY_IDS(IDS_STR_SETTINGS_PANEL_FAILED, IDS_STR_WEASEL,
+               MB_OK | MB_ICONERROR);
+    return 1;
   }
   return 0;
 }

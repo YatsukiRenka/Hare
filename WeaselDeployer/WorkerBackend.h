@@ -30,10 +30,13 @@ class WorkerBackend : public SyncBackend {
   bool List(std::vector<std::string>* names) override;
   FetchResult Get(const std::string& name, std::vector<uint8_t>* out) override;
   bool Put(const std::string& name, const std::vector<uint8_t>& data) override;
+  PutIfAbsentResult PutIfAbsent(const std::string& name,
+                                const std::vector<uint8_t>& data) override;
   std::wstring Describe() const override;
 
  private:
   std::map<std::wstring, std::wstring> AuthHeaders() const;
+  bool SupportsConditionalCreate() const;
 
   WorkerSettings settings_;
 };

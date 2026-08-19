@@ -70,7 +70,7 @@ c_guidDisplayAttributeInput {E17A8C85-D946-468B-8606-07F7C0BD179A}
 1. **本地目录后端**跑通完整链路。**已完成**：`WeaselDeployer/CloudSync.h` 与 `CloudSync.cpp`，在 `SyncUserData()` 里前后各一个调用点。第一版只搬运 `*.userdb.txt`，配置与皮肤留到第 6 步——它们需要 YAML 校验，是另一件事。
 2. HTTP 层与 SigV4，接上 R2 直连。**已完成**：`CloudHttp.h/.cpp`（WinHTTP + CNG 的 SHA-256、HMAC-SHA-256、DPAPI）与 `S3Backend.h/.cpp`。凭证以 DPAPI 加密后存为注册表 `REG_BINARY`。
 3. 加密层。**已完成**：`CloudCrypto.h/.cpp`。Argon2id 用 `third_party/argon2/` 的参考实现（CC0 / Apache-2.0 双授权），AES-256-GCM、随机数、DPAPI 走 CNG。
-4. WebDAV 与 Worker 代理两个后端。**代码已完成、尚未对真实服务验证**：`WebDavBackend.h/.cpp`（PROPFIND / MKCOL / GET / PUT，HTTP Basic）与 `WorkerBackend.h/.cpp`，Worker 本体在 `worker/`。WebDAV 需要一个账号（坚果云给的是应用密码）才能验；Worker 需要先部署到 Cloudflare。
+4. WebDAV 与 Worker 代理两个后端。**代码完成，已有服务行为做过开发机手工验证**：坚果云会忽略 `If-None-Match: *` 并覆盖旧内容，新客户端现已在正式密钥 PUT 前用非敏感对象识别并安全拒绝；旧 Worker 同样会在正式 PUT 前被能力握手拒绝。新版 Worker 已部署到 Cloudflare，线上验证确认能力标记精确匹配、第二次条件 PUT 返回 412、探针内容保持且 `keys/dek.bin` 前后不变。实现位于 `WebDavBackend.h/.cpp`、`WorkerBackend.h/.cpp` 与 `worker/`。
 5. 一键部署按钮：仓库公开后，`Deploy to Cloudflare` 会读 `worker/wrangler.jsonc` 自动创建并绑定 R2 桶。
 6. 配置与皮肤纳入同步范围，含 YAML 校验、时间戳备份与校验通过后的自动部署。
 
@@ -78,11 +78,13 @@ c_guidDisplayAttributeInput {E17A8C85-D946-468B-8606-07F7C0BD179A}
 
 验收记录：伪造设备的快照分别放进本地目录后端与 Cloudflare R2，同步后其词条（`紫毫 c=9`、`望舒 c=6` 等）出现在本机导出的快照里，与本机原有词条并存；上传的对象只有 `*.userdb.txt`，配置文件与 `replacer.userdb.txt` 按规则排除。
 
-`tools\s3.ps1` 可用来检查桶内容（`list` / `get` / `put` / `delete` / `purge`），凭证走参数或 `HARE_S3_*` 环境变量，脚本本身不含任何密钥。
+`tools\s3.ps1` 可用来检查桶内容（`list` / `get` / `put` / `delete` / `purge`）。endpoint、桶名、Access Key 与前缀可走参数或 `HARE_S3_*` 环境变量；Secret 只接受 `SecureString` 参数或安全提示输入，脚本本身不含任何密钥。
 
-后端接口只负责「按名字存取字节」（`List` / `Get` / `Put`），目录遍历、文件过滤与加解密全部收在 `CloudSync.cpp`。这样加了新后端也不可能漏掉加密，而不是每个后端各写一遍。
+后端接口只负责「按名字存取字节」（`List` / `Get` / `Put` / `PutIfAbsent`），目录遍历、文件过滤与加解密全部收在 `CloudSync.cpp`。这样加了新后端也不可能漏掉加密，而不是每个后端各写一遍。`PutIfAbsent` 专用于唯一的数据密钥：本地目录用同卷临时文件加不覆盖重命名，S3 用服务端条件写；WebDAV 会先用保留的非敏感对象实测 `If-None-Match: *` 是否真能阻止覆盖，不支持就拒绝建钥；Worker 先完成协议能力握手，再把同一条件原子传给 R2。
 
-密钥的建立目前靠临时命令行 `HareDeployer.exe /cloudkey:<主密码>`：已有密钥就用密码解开，没有就生成一把随机 DEK、包装后发布到存储的 `keys/dek.bin`，然后用 DPAPI 缓存在本机。**密码出现在命令行上，同机其他进程可见**，这是等设置面板落地前的权宜之计。实测 Argon2id（m=64MB, t=3, p=1）单次派生约 2.4 秒。
+密钥经设置面板的主密码框建立：存储已有 `keys/dek.bin` 时用密码解开，没有时生成随机 DEK 并以 create-if-absent 发布；并发建钥时只有一个设备能创建，其他设备读取并采用远端胜者，任何路径都不会覆盖已经存在的密钥。DEK 随后用 DPAPI 缓存在本机。主密码不经命令行。实测 Argon2id（m=64MB, t=3, p=1）单次派生约 2.4 秒。
+
+开发机手工验收记录（2026-08-19）：用当前 R2 账号的新 S3 凭据直接执行产品后端并发验收，同一新对象的两个 `S3Backend::PutIfAbsent` 恰好一个创建、一个返回已存在，第三次仍返回已存在；GET 内容等于两个竞争者之一，List 能看到对象，随机缺失对象返回 404。旧凭据得到的 `403 AccessDenied` 因而确认是授权问题，不是 SigV4 实现问题；这项线上验收不属于 `tools\test-cloud-sync.bat` 的自动测试范围。
 
 验收记录（加密）：上传后的对象不含任何可读词典标记；把 `installation.yaml` 的 `installation_id` 改成另一个值以模拟新设备后同步，另一台设备的密文快照被正确拉回、解密并合并。
 
@@ -90,17 +92,26 @@ c_guidDisplayAttributeInput {E17A8C85-D946-468B-8606-07F7C0BD179A}
 
 依赖上保持克制：HTTP 用 WinHTTP、加解密用 CNG，都是系统自带；不引入 OpenSSL 或 libcurl，每多一个第三方库就多一层上游合并的负担。
 
-阶段四已完成，含三轮独立审查发现的全部有效问题。判定为不成立的结论与其证据记在 [REVIEW-NOTES.md](REVIEW-NOTES.md)，动这块代码前先读。
+阶段四的加密词库同步核心链路可用。判定为不成立的结论与其证据记在 [REVIEW-NOTES.md](REVIEW-NOTES.md)，动这块代码前先读。
 
-留下的短板有两处，都由下一阶段解决：主密码经 `HareDeployer.exe /cloudkey:<密码>` 传入，命令行对同机其他进程可见；四种后端的配置只能改注册表，`tools\configure-sync.ps1` 只是把这件事变成一条命令，不是界面。
+`tools\test-cloud-sync.bat` 会构建并运行 x64、Win32 的 `TestCloudSyncCore`，再定向编译两种架构的 Release `HareDeployer`；加 `full` 会追加完整双架构 Release solution build。它覆盖快照 envelope 与名称认证、远端名称/路径冲突、S3 前缀边界、本地条件创建，以及批量文件提交失败时的回滚和临时/备份清理；不调用会清理日志的上游构建脚本。
+
+拉取会先把本轮全部对象下载、认证、解密并校验到内存，确认整批有效后才提交本地文件；本地提交先完整落临时文件，任一替换失败会反向恢复已经替换的目标。若 Windows 拒绝回滚替换或提交后的备份清理，事务返回 `kRecoveryRequired` 并把旧内容保留为目标旁的 `.hare.bak.*`，不把恢复材料静默删掉。
+
+阶段四仍有两项开放工作：
+
+- **主密码轮换路径**。存储已有包装密钥时，`SetUpDataKey` 只把输入当作解包密码；输入新密码只会得到解包失败，没有「旧密码解包 DEK、用新密码重新包装」的流程。
+- **S3 兼容存储的 Region 设置**。R2 接受 SigV4 scope 中的 `auto`，其他 S3 兼容端点要求自己的真实 region；固定 `auto` 会让这些端点拒绝签名。
 
 ## 阶段五：WebView2 设置面板
 
-同步配置面板已完成。皮肤面板随阶段六一起做——皮肤功能尚不存在，先做面板等于对着空气设计。
+同步配置、连接测试、密钥建立、手动同步与同步计划都由设置面板提供。皮肤面板随阶段六一起做——皮肤功能尚不存在，先做面板等于对着空气设计。
+
+阶段五仍有一项开放工作：**zxcvbn 风格的弱密码检查**。`docs/DESIGN.md` 要求拦截可预测密码，宿主只执行最短 10 位校验；`HareDeployer.exe` 的依赖层允许把许可兼容的词频表作为纯数据放进 `third_party/`，因此该检查有符合依赖边界的落点。
 
 入口：托盘菜单「云同步设置」，或 `HareDeployer.exe /settings`。面板本体在 `WeaselDeployer/SettingsPanel.h/.cpp` 与 `WeaselDeployer/settings.html`，配置的写入侧在 `CloudSync.cpp`（`SyncConfig::Save`、`SaveSyncSchedule`、`TestBackend`），上游文件里只有 `WeaselDeployer.cpp` 的一个分支和 `WeaselServerApp.cpp` 的两处调用。
 
-**`/cloudkey:<密码>` 已删除**。它是阶段四留下的权宜之计，命令行对同机其他进程可见；主密码现在只经面板的密码框进入进程。
+**主密码只经面板的密码框进入进程。** `/cloudkey:<密码>` 不是受支持的入口，避免命令行向同机其他进程暴露密码。
 
 几个决定：
 
@@ -111,11 +122,11 @@ c_guidDisplayAttributeInput {E17A8C85-D946-468B-8606-07F7C0BD179A}
 - **凭证不回传给页面**。页面只知道某项凭证「已保存」，输入框留空即表示不改动。
 - **面向用户的文案全部在页面里**，宿主只回报状态码（`test_ok`、`key_wrong_password` 等）。这样 C++ 源码里没有一个非 ASCII 字面量，也不必在三份 `.rc` 语言块之间同步措辞。
 - **换存储才丢弃本机缓存的数据密钥**，换凭证不丢。密钥属于存储，而轮换 access key 仍是同一个存储，此时要求重新输入主密码是无谓的。
-- **同步范围的多选项暂不提供**。同步范围目前只有词库快照，配置与皮肤要等阶段四第 6 步；摆出一个不起作用的开关比没有这个开关更糟。
+- **同步范围的多选项暂不提供**。同步范围只有词库快照，配置与皮肤要等阶段四第 6 步；摆出一个不起作用的开关比没有这个开关更糟。
 
 同步计划（间隔、启动时同步）落在 `WeaselServer/SyncScheduler.h/.cpp`：常驻进程才挂得住定时器，`HareDeployer` 是一次性的。定时器**每次到点都重读注册表**，因此在面板里改间隔不需要重启服务端。不挂退出钩子——注销时进程是被杀掉的，钩子不可靠。
 
-`Configurator::SyncUserData()` 现在会区分两种失败：Rime 自身的合并失败返回 1，只有云端那一轮失败返回 `kCloudSyncFailed`（2）。此前 `PushAfterSync()` 的返回值被丢弃，上传失败与成功在界面上看起来一模一样。
+`Configurator::SyncUserData()` 区分两种失败：Rime 自身的合并失败返回 1，云端拉取或发布失败返回 `kCloudSyncFailed`（2）；调用方必须把云端发布失败保留为可见结果。
 
 验收记录（对 Cloudflare R2 实测）：面板打开后正确显示注册表里已存的 S3 配置、凭证显示为「已保存」、设备标识与快照目录取自 `installation.yaml`；「测试连接」对 R2 返回成功；「保存」写回后 `DataKey` 保留、凭证二进制未变；切到本地目录后端并保存，`DataKey` 按预期被清除而 S3 各字段仍在；用错误的主密码「建立密钥」返回「密码不对」且云端密钥与本机缓存都未被改动；「立即同步」返回成功。定时器把间隔设为 1 分钟后，`HareServer` 在启动后约 25 秒拉起一次 `HareDeployer /sync`，此后每分钟一次，快照文件的时间戳随之推进。
 

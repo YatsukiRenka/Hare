@@ -126,8 +126,8 @@ static int CustomInstall(bool installing) {
       ShellExecuteW(NULL, NULL, (dir + L"\\HareServer.exe").c_str(), L"/q",
                     NULL, SW_SHOWNORMAL);
       Sleep(500);
-      ShellExecuteW(NULL, NULL, (dir + L"\\HareServer.exe").c_str(), L"",
-                    NULL, SW_SHOWNORMAL);
+      ShellExecuteW(NULL, NULL, (dir + L"\\HareServer.exe").c_str(), L"", NULL,
+                    SW_SHOWNORMAL);
       Sleep(500);
       ShellExecuteW(NULL, NULL, (dir + L"\\HareDeployer.exe").c_str(),
                     L"/deploy", NULL, SW_SHOWNORMAL);

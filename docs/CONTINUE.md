@@ -89,12 +89,13 @@ pwsh tools\configure-sync.ps1 -Backend s3 -Endpoint https://<账号>.r2.cloudfla
 
 ## 五、怎么验证
 
-`tools\s3.ps1` 用来直接检查桶内容，凭证走参数或 `HARE_S3_*` 环境变量：
+`tools\s3.ps1` 用来直接检查桶内容。endpoint、桶名、Access Key 与前缀可走参数或 `HARE_S3_*` 环境变量；Secret 只接受 `SecureString` 参数，省略时安全提示输入：
 
 ```powershell
 pwsh tools\s3.ps1 list
-pwsh tools\s3.ps1 get hare/<id>/wanxiang.userdb.txt
-pwsh tools\s3.ps1 purge ''      # 清空
+pwsh tools\s3.ps1 get hare/<id>/wanxiang.userdb.txt recovered.bin
+pwsh tools\s3.ps1 purge hare/   # 清空默认前缀，前缀外需要 -All
+cmd /c tools\test-cloud-sync.bat
 ```
 
 **模拟另一台设备**——验证拉取、解密、合并的核心手法：

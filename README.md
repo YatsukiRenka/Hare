@@ -11,7 +11,8 @@ Windows 平台的 Rime 输入法，[小狼毫（rime/weasel）](https://github.c
 | 功能 | 状态 |
 |---|---|
 | 与官方小狼毫并存安装 | 可用 |
-| 词频云同步，四种后端 | 可用 |
+| 词频云同步，本地目录与 Cloudflare R2 | 可用 |
+| WebDAV 与 Worker 后端 | 坚果云行为已实测并安全拒绝；新版 Worker 已部署并通过线上验证 |
 | 端到端加密 | 可用 |
 | 云同步设置面板 | 可用 |
 | 定时同步 | 可用 |
@@ -42,7 +43,7 @@ Rime 自带把用户词库导出为快照、再合并其他机器快照的机制
 | WebDAV | 服务地址、用户名、应用密码 |
 | Worker 代理 | Worker 网址、访问口令 |
 
-S3 后端在 Cloudflare R2 上验证过，也适用于 MinIO、Backblaze B2 等；WebDAV 在坚果云上验证过。[`worker/`](worker/) 里的 Cloudflare Worker 是为了把配置从四项压到两项——它自己持有 R2 凭证，用户不必接触。
+S3 后端已在 Cloudflare R2 上验证；当前签名 region 固定为 R2 使用的 `auto`，MinIO、Backblaze B2 等其他 S3 兼容服务尚未完成兼容性验收。WebDAV 是否可用取决于服务是否真正执行条件创建：实测坚果云会忽略条件并覆盖，客户端会在正式密钥写入前安全拒绝。[`worker/`](worker/) 里的 Cloudflare Worker 是为了把配置从四项压到两项——它自己持有 R2 凭证，用户不必接触；新版 Worker 已部署并通过能力握手、条件创建、内容保持与数据密钥不变的线上验证。
 
 后端、凭证、主密码、同步间隔都在设置面板里填。三个入口：托盘图标与语言栏按钮的右键菜单「云同步设置」，开始菜单的「【紫毫】云同步设置」，或 `HareDeployer.exe /settings`。**主密码没有命令行入口**——命令行对同机其他进程可见。
 
@@ -53,7 +54,7 @@ S3 后端在 Cloudflare R2 上验证过，也适用于 MinIO、Backblaze B2 等�
 - 32 字节随机数据密钥（DEK）用 AES-256-GCM 加密快照
 - 主密码经 Argon2id（m=64MB, t=3, p=1）派生密钥来包装 DEK，包装结果存在云端
 - 新设备只需知道主密码；解开后 DEK 用 DPAPI 缓存本机，之后无人值守同步不再需要密码
-- 换密码只重新包装 DEK，不必重加密历史数据
+- 设计上换密码只需重新包装 DEK，不必重加密历史数据；当前主密码轮换流程尚未实现
 
 选内存硬的 Argon2id 而非 PBKDF2，是因为这里的攻击是**离线**的：拿到存储读权限的人可以把包装后的密钥取走慢慢爆破，无法限速也无法察觉。同等硬件下 Argon2id 每次猜测的代价比 PBKDF2 高两到三个数量级。
 
@@ -79,6 +80,7 @@ pwsh tools\install-deps.ps1       # 预编译 librime、Boost 源码、WebView2 
 cmd  /c tools\build-boost.bat     # 编译 Boost 静态库
 cmd  /c tools\build-hare.bat      # 构建，产物在 output\
 cmd  /c tools\build-hare.bat installer   # 另外打 NSIS 安装包
+cmd  /c tools\test-cloud-sync.bat # 双架构云同步核心测试与 Deployer 编译
 ```
 
 需要 Visual Studio 的 C++ 桌面开发工作负载，含 ATL 与 MFC。**不要直接调用 `build.bat`**——它依赖包装脚本准备的环境。详情与几个环境陷阱见 [docs/BUILD.md](docs/BUILD.md)。

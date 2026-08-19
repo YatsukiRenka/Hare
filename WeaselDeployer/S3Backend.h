@@ -12,10 +12,10 @@
 namespace hare {
 
 struct S3Settings {
-  std::string endpoint;    // https://<account>.r2.cloudflarestorage.com
-  std::string host;        // <account>.r2.cloudflarestorage.com
+  std::string endpoint;  // https://<account>.r2.cloudflarestorage.com
+  std::string host;      // <account>.r2.cloudflarestorage.com
   std::string bucket;
-  std::string prefix;      // object key prefix, e.g. "hare/"
+  std::string prefix;  // object key prefix, e.g. "hare/"
   std::string access_key;
   std::string secret_key;
 
@@ -35,6 +35,8 @@ class S3Backend : public SyncBackend {
   bool List(std::vector<std::string>* names) override;
   FetchResult Get(const std::string& name, std::vector<uint8_t>* out) override;
   bool Put(const std::string& name, const std::vector<uint8_t>& data) override;
+  PutIfAbsentResult PutIfAbsent(const std::string& name,
+                                const std::vector<uint8_t>& data) override;
   std::wstring Describe() const override;
 
  private:
@@ -42,7 +44,8 @@ class S3Backend : public SyncBackend {
       const std::string& method,
       const std::string& canonical_uri,
       const std::string& canonical_query,
-      const std::string& payload) const;
+      const std::string& payload,
+      bool if_none_match) const;
 
   std::string ObjectUrl(const std::string& key) const;
   std::string CanonicalUri(const std::string& key) const;

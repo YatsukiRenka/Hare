@@ -12,7 +12,7 @@
 namespace hare {
 
 struct WebDavSettings {
-  std::string url;       // https://dav.example.com/dav/hare
+  std::string url;  // https://dav.example.com/dav/hare
   std::string username;
   std::string password;  // an application password where the service offers one
 
@@ -32,6 +32,8 @@ class WebDavBackend : public SyncBackend {
   bool List(std::vector<std::string>* names) override;
   FetchResult Get(const std::string& name, std::vector<uint8_t>* out) override;
   bool Put(const std::string& name, const std::vector<uint8_t>& data) override;
+  PutIfAbsentResult PutIfAbsent(const std::string& name,
+                                const std::vector<uint8_t>& data) override;
   std::wstring Describe() const override;
 
  private:
@@ -47,8 +49,12 @@ class WebDavBackend : public SyncBackend {
   // existing collection is harmless, so it is issued unconditionally.
   void EnsureCollection(const std::string& relative) const;
 
+  // Some WebDAV services accept If-None-Match but ignore it. Verify the
+  // condition against a reserved, non-secret object before touching the data
+  // key; an unsafe service is rejected rather than allowed to overwrite it.
+  bool SupportsConditionalCreate() const;
+
   WebDavSettings settings_;
-  std::string root_path_;  // path component of the configured URL
 };
 
 }  // namespace hare

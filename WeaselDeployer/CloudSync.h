@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "CloudSnapshot.h"
+
 // Cloud sync wraps Rime's own sync mechanism rather than replacing it.
 //
 // Rime exports each user dictionary to sync_dir/<installation_id>/*.userdb.txt
@@ -27,8 +29,15 @@ namespace hare {
 // "Absent" has to be distinguishable from "could not tell". Treating a network
 // error as proof that the data key is missing would lead to publishing a new
 // one over the old, and every snapshot encrypted with the old key would become
-// unreadable.
-enum class FetchResult { kOk, kNotFound, kError };
+// unreadable. The size-contract failure is separate as well so callers can
+// report it without mislabelling a deliberate local rejection as transport.
+enum class FetchResult { kOk, kNotFound, kError, kPayloadTooLarge };
+
+enum class PutIfAbsentResult {
+  kCreated,
+  kAlreadyExists,
+  kError,
+};
 
 // Remote storage, reduced to named blobs. Directory walking and encryption
 // live in one place above this interface so every backend behaves the same and
@@ -43,6 +52,10 @@ class SyncBackend {
                           std::vector<uint8_t>* out) = 0;
   virtual bool Put(const std::string& name,
                    const std::vector<uint8_t>& data) = 0;
+  // Atomic conditional creation. kAlreadyExists guarantees that the existing
+  // object was not modified.
+  virtual PutIfAbsentResult PutIfAbsent(const std::string& name,
+                                        const std::vector<uint8_t>& data) = 0;
 
   virtual std::wstring Describe() const = 0;
 };
@@ -85,9 +98,11 @@ struct SyncConfig {
   // user's choice to "off" because one field is still blank would lose it.
   static SyncConfig LoadForEditing();
 
-  // Writes the configuration back to the registry, with credentials under
-  // DPAPI. An empty credential leaves the stored one untouched: the panel never
-  // sends a saved secret back to the page, so "unchanged" arrives as empty.
+  // Stages the configuration, with credentials protected under DPAPI, for the
+  // immediately following SaveSyncSchedule() call. That call commits both sets
+  // of values together and restores their exact registry pre-image on failure.
+  // An empty credential leaves the stored one untouched: the panel never sends
+  // a saved secret back to the page, so "unchanged" arrives as empty.
   //
   // Pointing at a different storage forgets the locally cached data key. Every
   // storage publishes its own key, and keeping the previous one would only
@@ -95,10 +110,13 @@ struct SyncConfig {
   bool Save() const;
 
   bool enabled() const { return backend != Backend::kNone; }
+  bool valid() const;
 };
 
 // Scheduling lives next to the rest of the configuration but is read by the
-// server, which triggers synchronisation; see include\HareCloudSync.h.
+// server, which triggers synchronisation; see include\HareCloudSync.h. When a
+// SyncConfig::Save() is pending on this thread, this is the single commit point
+// for both configuration and schedule.
 bool SaveSyncSchedule(unsigned interval_minutes, bool on_startup);
 
 // Reaches the storage with the given settings without touching the registry,
@@ -118,16 +136,25 @@ std::filesystem::path SyncDirectory();
 // the file has not been written yet, which happens before the first deploy.
 std::wstring InstallationId();
 
-// Decides what travels. Rime also drops configuration files and a few derived
-// databases into the sync directory; only the user dictionary snapshots are
-// exchanged, and among those `replacer` is skipped because it is generated
-// from schema data and rebuilt on every machine while weighing several
-// megabytes.
-bool IsSyncableSnapshot(const std::filesystem::path& file);
+// The most recent pull/push result on this thread. Existing callers still use
+// the boolean result, while diagnostics can distinguish malformed or oversized
+// snapshots from an otherwise unspecified cloud failure.
+enum class CloudSyncError {
+  kNone,
+  kFailed,
+  // Host/page status code: "sync_unsupported_snapshot_format".
+  kUnsupportedSnapshotFormat,
+  kInvalidSnapshot,
+  kObjectTooLarge,
+  // A local batch left a .hare.bak recovery file beside a destination.
+  kLocalRecoveryRequired,
+};
+
+CloudSyncError LastCloudSyncError();
 
 // Establishes the shared data key on this machine: unwraps the one already
-// published with `password`, or creates and publishes one if the storage holds
-// no key yet. The unwrapped key is cached under DPAPI, so this only has to run
+// published with `password`, or atomically creates one if the storage holds no
+// key yet. The unwrapped key is cached under DPAPI, so this only has to run
 // once per machine and unattended synchronisation needs no password afterwards.
 //
 // The failure is reported by stage because the causes call for different
@@ -146,8 +173,9 @@ enum class KeySetupResult {
 
 KeySetupResult SetUpDataKey(const std::string& password);
 
-// Both return true when there was nothing to do, so a disabled or unreachable
-// backend never blocks the local sync.
+// Both return true when there was nothing to do. Push refuses to publish unless
+// the preceding pull in this thread succeeded, while the local Rime merge still
+// runs and the failed cloud round remains visible to the caller.
 bool PullBeforeSync();
 bool PushAfterSync();
 

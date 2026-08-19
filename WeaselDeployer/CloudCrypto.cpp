@@ -8,7 +8,10 @@
 #include <dpapi.h>
 
 #include <cstring>
+#include <iterator>
+#include <limits>
 #include <memory>
+#include <utility>
 
 #include <HareCloudSync.h>
 
@@ -71,9 +74,8 @@ bool WriteRegBinary(const wchar_t* value, const std::vector<uint8_t>& data) {
                       KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
     return false;
   }
-  const LSTATUS status =
-      RegSetValueExW(key, value, 0, REG_BINARY, data.data(),
-                     static_cast<DWORD>(data.size()));
+  const LSTATUS status = RegSetValueExW(key, value, 0, REG_BINARY, data.data(),
+                                        static_cast<DWORD>(data.size()));
   RegCloseKey(key);
   return status == ERROR_SUCCESS;
 }
@@ -127,6 +129,8 @@ std::vector<uint8_t> UnprotectBytes(const std::vector<uint8_t>& sealed) {
 }  // namespace
 
 std::vector<uint8_t> RandomBytes(size_t count) {
+  if (count > (std::numeric_limits<ULONG>::max)())
+    return {};
   std::vector<uint8_t> buffer(count);
   if (!BCRYPT_SUCCESS(BCryptGenRandom(nullptr, buffer.data(),
                                       static_cast<ULONG>(buffer.size()),
@@ -136,8 +140,46 @@ std::vector<uint8_t> RandomBytes(size_t count) {
   return buffer;
 }
 
-std::vector<uint8_t> AesGcmEncrypt(const std::vector<uint8_t>& key,
-                                   const std::string& plaintext) {
+namespace {
+
+constexpr uint8_t kSnapshotMagic[] = {'H', 'A', 'R', 'E', 'S', 'N', 'A', 'P'};
+constexpr uint8_t kSnapshotVersion = 1;
+static_assert(sizeof(kSnapshotMagic) == kSnapshotMagicLength);
+
+bool BuildSnapshotAad(const std::string& remote_name,
+                      std::vector<uint8_t>* aad) {
+  constexpr size_t kAadFixedLength =
+      kSnapshotMagicLength + 1 + sizeof(uint32_t);
+  if (remote_name.empty() ||
+      remote_name.size() >
+          (std::numeric_limits<ULONG>::max)() - kAadFixedLength ||
+      remote_name.size() > (std::numeric_limits<uint32_t>::max)()) {
+    return false;
+  }
+
+  const uint32_t name_length = static_cast<uint32_t>(remote_name.size());
+  aad->clear();
+  aad->reserve(kAadFixedLength + remote_name.size());
+  aad->insert(aad->end(), std::begin(kSnapshotMagic), std::end(kSnapshotMagic));
+  aad->push_back(kSnapshotVersion);
+  aad->push_back(static_cast<uint8_t>((name_length >> 24) & 0xff));
+  aad->push_back(static_cast<uint8_t>((name_length >> 16) & 0xff));
+  aad->push_back(static_cast<uint8_t>((name_length >> 8) & 0xff));
+  aad->push_back(static_cast<uint8_t>(name_length & 0xff));
+  aad->insert(aad->end(), remote_name.begin(), remote_name.end());
+  return true;
+}
+
+std::vector<uint8_t> AesGcmEncryptRaw(const std::vector<uint8_t>& key,
+                                      const std::string& plaintext,
+                                      const std::vector<uint8_t>& aad) {
+  if (plaintext.empty() ||
+      plaintext.size() > kMaxCloudObjectBytes - kAesGcmRawOverhead ||
+      plaintext.size() > (std::numeric_limits<ULONG>::max)() ||
+      aad.size() > (std::numeric_limits<ULONG>::max)()) {
+    return {};
+  }
+
   AlgHandle alg = OpenAesGcm();
   if (!alg || key.size() != kKeyLength)
     return {};
@@ -163,6 +205,8 @@ std::vector<uint8_t> AesGcmEncrypt(const std::vector<uint8_t>& key,
   info.cbNonce = static_cast<ULONG>(nonce.size());
   info.pbTag = tag.data();
   info.cbTag = static_cast<ULONG>(tag.size());
+  info.pbAuthData = aad.empty() ? nullptr : const_cast<PUCHAR>(aad.data());
+  info.cbAuthData = static_cast<ULONG>(aad.size());
 
   ULONG written = 0;
   if (!BCRYPT_SUCCESS(BCryptEncrypt(
@@ -170,7 +214,8 @@ std::vector<uint8_t> AesGcmEncrypt(const std::vector<uint8_t>& key,
           reinterpret_cast<PUCHAR>(const_cast<char*>(plaintext.data())),
           static_cast<ULONG>(plaintext.size()), &info, nullptr, 0,
           ciphertext.empty() ? nullptr : ciphertext.data(),
-          static_cast<ULONG>(ciphertext.size()), &written, 0))) {
+          static_cast<ULONG>(ciphertext.size()), &written, 0)) ||
+      written != plaintext.size()) {
     return {};
   }
   ciphertext.resize(written);
@@ -183,10 +228,16 @@ std::vector<uint8_t> AesGcmEncrypt(const std::vector<uint8_t>& key,
   return sealed;
 }
 
-std::optional<std::string> AesGcmDecrypt(const std::vector<uint8_t>& key,
-                                         const std::vector<uint8_t>& sealed) {
-  if (key.size() != kKeyLength || sealed.size() < kNonceLength + kTagLength)
+std::optional<std::string> AesGcmDecryptRaw(const std::vector<uint8_t>& key,
+                                            const std::vector<uint8_t>& sealed,
+                                            const std::vector<uint8_t>& aad) {
+  if (key.size() != kKeyLength || sealed.size() <= kAesGcmRawOverhead ||
+      sealed.size() > kMaxCloudObjectBytes ||
+      aad.size() > (std::numeric_limits<ULONG>::max)()) {
     return std::nullopt;
+  }
+
+  const size_t cipher_length = sealed.size() - kAesGcmRawOverhead;
 
   AlgHandle alg = OpenAesGcm();
   if (!alg)
@@ -200,29 +251,81 @@ std::optional<std::string> AesGcmDecrypt(const std::vector<uint8_t>& key,
   }
   KeyHandle key_handle(raw_key);
 
-  const size_t cipher_length = sealed.size() - kNonceLength - kTagLength;
   BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO info;
   BCRYPT_INIT_AUTH_MODE_INFO(info);
   info.pbNonce = const_cast<PUCHAR>(sealed.data());
   info.cbNonce = kNonceLength;
   info.pbTag = const_cast<PUCHAR>(sealed.data() + kNonceLength + cipher_length);
   info.cbTag = kTagLength;
+  info.pbAuthData = aad.empty() ? nullptr : const_cast<PUCHAR>(aad.data());
+  info.cbAuthData = static_cast<ULONG>(aad.size());
 
   std::string plaintext(cipher_length, '\0');
   ULONG written = 0;
   // A wrong key or tampered data fails here rather than returning garbage,
   // which is the reason for choosing an authenticated cipher.
   if (!BCRYPT_SUCCESS(BCryptDecrypt(
-          key_handle.get(),
-          const_cast<PUCHAR>(sealed.data() + kNonceLength),
+          key_handle.get(), const_cast<PUCHAR>(sealed.data() + kNonceLength),
           static_cast<ULONG>(cipher_length), &info, nullptr, 0,
           plaintext.empty() ? nullptr
                             : reinterpret_cast<PUCHAR>(plaintext.data()),
-          static_cast<ULONG>(plaintext.size()), &written, 0))) {
+          static_cast<ULONG>(plaintext.size()), &written, 0)) ||
+      written != cipher_length) {
     return std::nullopt;
   }
   plaintext.resize(written);
   return plaintext;
+}
+
+}  // namespace
+
+std::vector<uint8_t> EncryptSnapshot(const std::vector<uint8_t>& key,
+                                     const std::string& remote_name,
+                                     const std::string& plaintext) {
+  if (plaintext.empty() || plaintext.size() > kMaxSnapshotPlaintextBytes)
+    return {};
+
+  std::vector<uint8_t> aad;
+  if (!BuildSnapshotAad(remote_name, &aad))
+    return {};
+  const std::vector<uint8_t> raw = AesGcmEncryptRaw(key, plaintext, aad);
+  if (raw.empty())
+    return {};
+
+  std::vector<uint8_t> sealed;
+  sealed.reserve(kSnapshotHeaderLength + raw.size());
+  sealed.insert(sealed.end(), std::begin(kSnapshotMagic),
+                std::end(kSnapshotMagic));
+  sealed.push_back(kSnapshotVersion);
+  sealed.insert(sealed.end(), raw.begin(), raw.end());
+  return sealed;
+}
+
+SnapshotDecryptResult DecryptSnapshot(const std::vector<uint8_t>& key,
+                                      const std::string& remote_name,
+                                      const std::vector<uint8_t>& sealed,
+                                      std::string* plaintext) {
+  if (!plaintext)
+    return SnapshotDecryptResult::kAuthenticationFailed;
+  plaintext->clear();
+
+  if (sealed.size() <= kSnapshotEnvelopeOverhead ||
+      sealed.size() > kMaxCloudObjectBytes ||
+      std::memcmp(sealed.data(), kSnapshotMagic, kSnapshotMagicLength) != 0 ||
+      sealed[kSnapshotMagicLength] != kSnapshotVersion) {
+    return SnapshotDecryptResult::kUnsupportedFormat;
+  }
+
+  std::vector<uint8_t> aad;
+  if (!BuildSnapshotAad(remote_name, &aad))
+    return SnapshotDecryptResult::kAuthenticationFailed;
+  const std::vector<uint8_t> raw(sealed.begin() + kSnapshotHeaderLength,
+                                 sealed.end());
+  auto decrypted = AesGcmDecryptRaw(key, raw, aad);
+  if (!decrypted)
+    return SnapshotDecryptResult::kAuthenticationFailed;
+  *plaintext = std::move(*decrypted);
+  return SnapshotDecryptResult::kOk;
 }
 
 std::vector<uint8_t> DeriveKey(const std::string& password,
@@ -247,7 +350,7 @@ std::vector<uint8_t> WrapDataKey(const std::vector<uint8_t>& dek,
     return {};
 
   const std::vector<uint8_t> sealed =
-      AesGcmEncrypt(kek, std::string(dek.begin(), dek.end()));
+      AesGcmEncryptRaw(kek, std::string(dek.begin(), dek.end()), {});
   if (sealed.empty())
     return {};
 
@@ -275,11 +378,17 @@ std::optional<std::vector<uint8_t>> UnwrapDataKey(
 
   const std::vector<uint8_t> sealed(
       wrapped.begin() + kWrapMagicLength + kSaltLength, wrapped.end());
-  const auto plaintext = AesGcmDecrypt(kek, sealed);
+  const auto plaintext = AesGcmDecryptRaw(kek, sealed, {});
   if (!plaintext || plaintext->size() != kKeyLength)
     return std::nullopt;
 
   return std::vector<uint8_t>(plaintext->begin(), plaintext->end());
+}
+
+std::optional<std::vector<uint8_t>> ResolvePublishedDataKey(
+    const std::vector<uint8_t>& published,
+    const std::string& password) {
+  return UnwrapDataKey(published, password);
 }
 
 std::optional<std::vector<uint8_t>> LoadCachedDataKey() {
